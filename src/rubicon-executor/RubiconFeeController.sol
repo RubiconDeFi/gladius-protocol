@@ -70,6 +70,8 @@ contract RubiconFeeController is IProtocolFeeController, DSAuth {
         }
     }
 
+    //---------------------------- ADMIN ----------------------------
+
     function setFee(
         address tokenIn,
         address tokenOut,
@@ -78,5 +80,9 @@ contract RubiconFeeController is IProtocolFeeController, DSAuth {
     ) external auth {
         bytes32 pairHash = getPairHash(tokenIn, tokenOut);
         fees[pairHash] = Fee({applyFee: applyFee, fee: fee});
+    }
+
+    function setFeeRecipient(address recipient) external auth {
+        feeRecipient = recipient;
     }
 }
