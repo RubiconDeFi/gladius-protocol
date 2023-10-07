@@ -15,7 +15,6 @@ contract RubiconFeeController is IProtocolFeeController, DSAuth {
     bool public initialized;
 
     struct Fee {
-        // If true, apply either pair-based or base fee.
         bool applyFee;
         uint256 fee;
     }
