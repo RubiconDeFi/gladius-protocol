@@ -71,6 +71,8 @@ contract RubiconFeeControllerTest is Test {
         ResolvedOrder memory order = createOrder(1 ether, false);
 
         assertEq(order.outputs.length, 1);
+        vm.prank(PROTOCOL_FEE_OWNER);
+        feeController.setFee(address(tokenIn), address(tokenOut), 0, true);
         ResolvedOrder memory afterFees = fees.takeFees(order);
         assertEq(afterFees.outputs.length, 1);
         assertEq(afterFees.outputs[0].token, order.outputs[0].token);
@@ -104,7 +106,6 @@ contract RubiconFeeControllerTest is Test {
         ResolvedOrder memory order = createOrder(1 ether, false);
         /// @dev Enable fee, but apply only BASE_FEE.
         vm.prank(PROTOCOL_FEE_OWNER);
-        feeController.setFee(address(tokenIn), address(tokenOut), 0, true);
 
         assertEq(order.outputs.length, 1);
         ResolvedOrder memory afterFees = fees.takeFees(order);

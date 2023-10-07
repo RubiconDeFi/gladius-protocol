@@ -46,14 +46,12 @@ contract RubiconFeeController is IProtocolFeeController, DSAuth {
         address tokenOut = order.outputs[0].token;
 
         Fee memory fees = fees[getPairHash(address(tokenIn), tokenOut)];
-        uint256 feeAmount;
 
-        /// @dev Apply either base or pair-based fee.
-        if (fees.applyFee) {
-            feeAmount = fees.fee != 0
-                ? (order.outputs[0].amount * fees.fee) / BPS
-                : (order.outputs[0].amount * BASE_FEE) / BPS;
+        uint256 feeAmount = fees.applyFee
+            ? (order.outputs[0].amount * fees.fee) / BPS
+            : (order.outputs[0].amount * BASE_FEE) / BPS;
 
+        if (feeAmount != 0) {
             result = new OutputToken[](1);
             result[0] = OutputToken({
                 token: tokenOut,
