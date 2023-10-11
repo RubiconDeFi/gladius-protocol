@@ -9,7 +9,7 @@ import {DSAuth} from "../lib/DSAuth.sol";
 /// @dev Rubicon's Protocol fee controller.
 contract RubiconFeeController is IProtocolFeeController, DSAuth {
     uint256 private constant BPS = 100_000;
-    uint256 public constant BASE_FEE = 30;
+    uint256 public constant BASE_FEE = 10;
     address public feeRecipient;
 
     bool public initialized;
@@ -29,44 +29,65 @@ contract RubiconFeeController is IProtocolFeeController, DSAuth {
         initialized = true;
     }
 
+    /// @return hash - direction independent hash of the pair
     function getPairHash(
         address tokenIn,
         address tokenOut
-    ) public view returns (bytes32 hash) {
-        hash = keccak256(bytes.concat(bytes20(tokenIn), bytes20(tokenOut)));
+    ) public pure returns (bytes32 hash) {
+        address input = tokenIn > tokenOut ? tokenIn : tokenOut;
+        address output = input == tokenIn ? tokenOut : tokenIn;
+
+        hash = keccak256(bytes.concat(bytes20(input), bytes20(output)));
     }
 
     /// @inheritdoc IProtocolFeeController
     function getFeeOutputs(
         ResolvedOrder memory order
     ) external view override returns (OutputToken[] memory result) {
+        result = new OutputToken[](order.outputs.length);
+
         address tokenIn = address(order.input.token);
-        /// @dev Take only 1 output token.
-        address tokenOut = order.outputs[0].token;
+        uint256 feeCount;
 
-        Fee memory fees = fees[getPairHash(address(tokenIn), tokenOut)];
+        for (uint256 i = 0; i < order.outputs.length; ++i) {
+            address tokenOut = order.outputs[i].token;
 
-        uint256 feeAmount = fees.applyFee
-            ? (order.outputs[0].amount * fees.fee) / BPS
-            : (order.outputs[0].amount * BASE_FEE) / BPS;
+            Fee memory fee = fees[getPairHash(address(tokenIn), tokenOut)];
 
-        if (feeAmount != 0) {
-            result = new OutputToken[](1);
-            result[0] = OutputToken({
-                token: tokenOut,
-                amount: feeAmount,
-                recipient: feeRecipient
-            });
+            uint256 feeAmount = fee.applyFee
+                ? (order.outputs[i].amount * fee.fee) / BPS
+                : (order.outputs[i].amount * BASE_FEE) / BPS;
+
+            /// @dev If fee is applied to pair.
+            if (feeAmount != 0) {
+                bool found;
+
+                for (uint256 j = 0; j < feeCount; ++j) {
+                    OutputToken memory feeOutput = result[j];
+
+                    if (feeOutput.token == tokenOut) {
+                        found = true;
+                        feeOutput.amount += feeAmount;
+                    }
+                }
+
+                if (!found) {
+                    result[feeCount] = OutputToken({
+                        token: tokenOut,
+                        amount: feeAmount,
+                        recipient: feeRecipient
+                    });
+                    feeCount++;
+                }
+            }
         }
-
-        uint256 size = result.length;
 
         assembly {
             // update array size to the actual number of unique fee outputs pairs
             // since the array was initialized with an upper bound of the total number of outputs
             // note: this leaves a few unused memory slots, but free memory pointer
             // still points to the next fresh piece of memory
-            mstore(result, size)
+            mstore(result, feeCount)
         }
     }
 
