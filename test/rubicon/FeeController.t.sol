@@ -49,6 +49,17 @@ contract RubiconFeeControllerTest is Test {
         fees.setProtocolFeeController(address(feeController));
     }
 
+    function testFuzzPairHashUniformity(
+        address tokenIn,
+        address tokenOut
+    ) public {
+        bytes32 hash0 = feeController.getPairHash(tokenIn, tokenOut);
+        bytes32 hash1 = feeController.getPairHash(tokenOut, tokenIn);
+
+        // hashes are always the same
+        assertEq(hash0, hash1);
+    }
+
     function testSetFeeController() public {
         assertEq(address(fees.feeController()), address(feeController));
         vm.expectEmit(true, true, false, false);
@@ -85,6 +96,7 @@ contract RubiconFeeControllerTest is Test {
         uint256 feeBps = 3;
         /// @dev Apply pair-based fee.
         vm.prank(PROTOCOL_FEE_OWNER);
+
         feeController.setFee(address(tokenIn), address(tokenOut), feeBps, true);
 
         assertEq(order.outputs.length, 1);
@@ -120,6 +132,48 @@ contract RubiconFeeControllerTest is Test {
             (order.outputs[0].amount * feeController.BASE_FEE()) / 100_000
         );
         assertEq(afterFees.outputs[1].recipient, RECIPIENT);
+    }
+
+    function testFuzzPairBasedFee(uint256 feeBps) public {
+        vm.assume(feeBps >= 0 && feeBps < 50);
+
+        ResolvedOrder memory order = createOrder(1 ether, false);
+        /// @dev Apply pair-based fee.
+        vm.prank(PROTOCOL_FEE_OWNER);
+
+        feeController.setFee(
+            address(tokenIn),
+            address(tokenOut),
+            feeBps,
+            true
+        );
+
+        assertEq(order.outputs.length, 1);
+        ResolvedOrder memory afterFees = fees.takeFees(order);
+
+        if (feeBps > 0) {
+            assertEq(afterFees.outputs.length, 2);
+            assertEq(afterFees.outputs[0].token, order.outputs[0].token);
+            assertEq(afterFees.outputs[0].amount, order.outputs[0].amount);
+            assertEq(
+                afterFees.outputs[0].recipient,
+                order.outputs[0].recipient
+            );
+            assertEq(afterFees.outputs[1].token, order.outputs[0].token);
+            assertEq(
+                afterFees.outputs[1].amount,
+                (order.outputs[0].amount * feeBps) / 100_000
+            );
+            assertEq(afterFees.outputs[1].recipient, RECIPIENT);
+        } else {
+            assertEq(afterFees.outputs.length, 1);
+            assertEq(afterFees.outputs[0].token, order.outputs[0].token);
+            assertEq(afterFees.outputs[0].amount, order.outputs[0].amount);
+            assertEq(
+                afterFees.outputs[0].recipient,
+                order.outputs[0].recipient
+            );
+        }
     }
 
     function createOrder(
