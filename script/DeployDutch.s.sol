@@ -1,19 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.13;
 
-import {DutchOrderReactor, DutchOrder, DutchInput, DutchOutput} from "../src/reactors/DutchOrderReactor.sol";
-import {OutputsBuilder} from "../test/util/OutputsBuilder.sol";
-import {OrderInfoBuilder} from "../test/util/OrderInfoBuilder.sol";
-import {OutputToken, InputToken, OrderInfo, ResolvedOrder, SignedOrder} from "../src/base/ReactorStructs.sol";
-import "forge-std/console2.sol";
-import "forge-std/Script.sol";
-import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
-import {PermitSignature} from "../test/util/PermitSignature.sol";
 import {DutchOrderReactor} from "../src/reactors/DutchOrderReactor.sol";
-import {OrderQuoter} from "../src/lens/OrderQuoter.sol";
+import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 import {DeployPermit2} from "../test/util/DeployPermit2.sol";
 import {MockERC20} from "../test/util/mock/MockERC20.sol";
-import {ERC20} from "solmate/src/tokens/ERC20.sol";
+import {OrderQuoter} from "../src/lens/OrderQuoter.sol";
+import {DeployProxy} from "./ProxyDeployment.sol";
+import "forge-std/console.sol";
+import "forge-std/Script.sol";
 
 struct DutchDeployment {
     IPermit2 permit2;
@@ -21,74 +16,32 @@ struct DutchDeployment {
     OrderQuoter quoter;
 }
 
-contract DeployDutch is Script, DeployPermit2, PermitSignature {
-    using OrderInfoBuilder for OrderInfo;
-
+contract DeployDutch is Script, DeployPermit2, DeployProxy {
     IPermit2 constant PERMIT2 =
         IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
-    /// @dev My test address.
-    OrderQuoter public quoter =
-        OrderQuoter(0x3DE6B223DE796aBe6590d927B47A37dCF6d2771e);
-    DutchOrderReactor reactor =
-        DutchOrderReactor(payable(0xFeF57fD5622EB4627b32642Ac0a010353f487090));
-    MockERC20 tokenIn;
-    MockERC20 tokenOut;
+    address constant RUBICON_ETH = 0x3204AC6F848e05557c6c7876E09059882e07962F;
 
     function setUp() public {}
 
     function run() public returns (DutchDeployment memory deployment) {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address me = vm.addr(deployerPrivateKey);
-        uint256 dudePk = 0x12341235;
-        address dude = vm.addr(dudePk);
+        vm.startBroadcast();
+        if (address(PERMIT2).code.length == 0) {
+            deployPermit2();
+        }
 
-        vm.startBroadcast(deployerPrivateKey);
+        DutchOrderReactor reactor = new DutchOrderReactor();
+        console.log("DutchOrderReactor implementation:", address(reactor));
 
-        tokenIn = new MockERC20("Input", "IN", 18);
-        tokenOut = new MockERC20("Output", "OUT", 18);
+        address payable proxy = deployProxy(address(reactor), "");
+        console.log("Proxy for 'DutchOrderReactor':", proxy);
+        DutchOrderReactor(proxy).initialize(PERMIT2, RUBICON_ETH);
+        console.log("Proxy is initialized");
 
-        /// @dev Swapper receives his tokens
-        tokenIn.mint(dude, type(uint128).max);
-        /// @dev Filler receives tokens to pay.
-        tokenOut.mint(me, type(uint128).max);
-
-        //tokenIn.mint(address(reactor), type(uint128).max);
-        //tokenOut.mint(address(reactor), type(uint128).max);
-
-        //tokenIn.approve(address(PERMIT2), type(uint64).max);
-        //tokenIn.approve(address(reactor), type(uint64).max);
-
-        tokenIn.forceApprove(dude, address(PERMIT2), type(uint64).max);
-        //tokenIn.forceApprove(me, dude, type(uint64).max);
-        tokenOut.forceApprove(me, address(reactor), type(uint64).max);
-
-        // 2.
-
-        DutchOrder memory order = DutchOrder({
-            info: OrderInfoBuilder
-                .init(address(reactor))
-                .withSwapper(dude)
-                .withDeadline(block.timestamp + 100),
-            decayStartTime: block.timestamp - 1,
-            decayEndTime: block.timestamp + 1,
-            input: DutchInput(tokenIn, 1, 1),
-            outputs: OutputsBuilder.singleDutch(address(tokenOut), 1, 1, dude)
-        });
-
-        reactor.execute(
-            SignedOrder(
-                abi.encode(order),
-                signOrder(dudePk, address(PERMIT2), order)
-            )
-        );
-
-        /*quoter.quote(
-            abi.encode(order),
-            signOrder(deployerPrivateKey, address(PERMIT2), order)
-        );*/
+        OrderQuoter quoter = new OrderQuoter();
+        console.log("Quoter", address(quoter));
 
         vm.stopBroadcast();
 
-        //return DutchDeployment(PERMIT2, reactor, quoter);
+        return DutchDeployment(PERMIT2, DutchOrderReactor(proxy), quoter);
     }
 }

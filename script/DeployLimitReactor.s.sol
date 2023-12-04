@@ -1,40 +1,47 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.13;
 
-import "forge-std/console2.sol";
-import "forge-std/Script.sol";
-import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 import {LimitOrderReactor} from "../src/reactors/LimitOrderReactor.sol";
-import {OrderQuoter} from "../src/lens/OrderQuoter.sol";
+import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 import {DeployPermit2} from "../test/util/DeployPermit2.sol";
+import {MockERC20} from "../test/util/mock/MockERC20.sol";
+import {OrderQuoter} from "../src/lens/OrderQuoter.sol";
+import {DeployProxy} from "./ProxyDeployment.sol";
+import "forge-std/console.sol";
+import "forge-std/Script.sol";
 
-contract DeployLimitReactor is Script, DeployPermit2 {
-    address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+struct LimitDeployment {
+    IPermit2 permit2;
+    LimitOrderReactor reactor;
+    OrderQuoter quoter;
+}
 
-    /// @dev My test address.
-    //address constant FEE_TO = 0x42dEe6d967C1AD5344e7975Cf02B42F860b94d00;
+contract DeployLimit is Script, DeployPermit2, DeployProxy {
+    IPermit2 constant PERMIT2 =
+        IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
+    address constant RUBICON_ETH = 0x3204AC6F848e05557c6c7876E09059882e07962F;
 
     function setUp() public {}
 
-    function run() public {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(deployerPrivateKey);
-        /// @dev Permit2 already there
-        /*if (PERMIT2.code.length == 0) {
+    function run() public returns (LimitDeployment memory deployment) {
+        vm.startBroadcast();
+        if (address(PERMIT2).code.length == 0) {
             deployPermit2();
-        }*/
+        }
 
-        /// @dev FEE_TO isn't set for now.
-        LimitOrderReactor reactor = new LimitOrderReactor{
-            salt: keccak256("WOB_2")
-        }(IPermit2(PERMIT2), address(0));
-        console2.log("Limit Order Reactor", address(reactor));
+        LimitOrderReactor reactor = new LimitOrderReactor();
+        console.log("LimitOrderReactor implementation:", address(reactor));
 
-        OrderQuoter quoter = new OrderQuoter{salt: keccak256("fuck AMMs")}();
-        console2.log("Quoter", address(quoter));
+        address payable proxy = deployProxy(address(reactor), "");
+        console.log("Proxy for 'LimitOrderReactor':", proxy);
+        LimitOrderReactor(proxy).initialize(PERMIT2, RUBICON_ETH);
+        console.log("Proxy is initialized");
+
+        OrderQuoter quoter = new OrderQuoter();
+        console.log("Quoter", address(quoter));
 
         vm.stopBroadcast();
 
-        //return ExclusiveDutchDeployment(IPermit2(PERMIT2), reactor, quoter);
+        return LimitDeployment(PERMIT2, LimitOrderReactor(proxy), quoter);
     }
 }
