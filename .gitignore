@@ -7,5 +7,5 @@ out/
 /broadcast/*
 /broadcast/*/31337/
 
-.idea/
+*.org
 .env
