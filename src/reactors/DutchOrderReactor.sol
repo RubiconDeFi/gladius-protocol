@@ -21,11 +21,6 @@ contract DutchOrderReactor is BaseReactor {
     /// @notice thrown when an order's inputs and outputs both decay
     error InputAndOutputDecay();
 
-    constructor(
-        IPermit2 _permit2,
-        address _protocolFeeOwner
-    ) BaseReactor(_permit2, _protocolFeeOwner) {}
-
     /// @inheritdoc BaseReactor
     function resolve(
         SignedOrder calldata signedOrder

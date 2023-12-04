@@ -25,18 +25,22 @@ abstract contract BaseReactor is
     using ResolvedOrderLib for ResolvedOrder;
     using CurrencyLibrary for address;
 
+    bool public initialized;
+
     // Occurs when an output = ETH and the reactor does contain enough ETH but
     // the direct filler did not include enough ETH in their call to execute/executeBatch
     error InsufficientEth();
+    error AlreadyInitialized();
 
     /// @notice permit2 address used for token transfers and signature verification
-    IPermit2 public immutable permit2;
+    IPermit2 public permit2;
 
-    constructor(
-        IPermit2 _permit2,
-        address _protocolFeeOwner
-    ) ProtocolFees(_protocolFeeOwner) {
+    function initialize(IPermit2 _permit2, address _owner) public {
+        if (initialized) revert AlreadyInitialized();
         permit2 = _permit2;
+        owner = _owner;
+
+        initialized = true;
     }
 
     /// @inheritdoc IReactor
