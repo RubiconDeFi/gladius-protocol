@@ -2,54 +2,45 @@
 pragma solidity 0.8.19;
 
 import {SignedOrder, ResolvedOrder, InputToken, OutputToken} from "../base/ReactorStructs.sol";
-import {ExclusiveDutchOrder, ExclusiveDutchOrderLib, DutchOutput, DutchInput} from "../lib/ExclusiveDutchOrderLib.sol";
-import {PartialFillLib, ExclusiveDutchOrderWithPF} from "../lib/PartialFillLib.sol";
-import {ExclusiveDutchOrderReactor} from "./ExclusiveDutchOrderReactor.sol";
+import {DutchOutput, DutchInput} from "../lib/ExclusiveDutchOrderLib.sol";
 import {ExclusivityOverrideLib} from "../lib/ExclusivityOverrideLib.sol";
+import {PartialFillLib, GladiusOrder} from "../lib/PartialFillLib.sol";
+import {BaseGladiusReactor} from "./BaseGladiusReactor.sol";
 import {DutchDecayLib} from "../lib/DutchDecayLib.sol";
 import {Permit2Lib} from "../lib/Permit2Lib.sol";
-import {BaseReactor} from "./BaseReactor.sol";
 
-/// @notice Reactor for exclusive dutch orders, with some modifications:
-///         - Supports partial fills.
-///         - Allows only 1 output per 1 input.
-contract GladiusReactor is BaseReactor {
-    using PartialFillLib for ExclusiveDutchOrderWithPF;
+/// @notice Reactor for exclusive Dutch orders (aka Gladius Orders).
+///         The main differences between 'GladiusOrder' and 'ExclusiveDutchOrder' are:
+///         * 'GladiusOrder' supports partial fills
+///         * 'GladiusOrder' allows only 1 element in 'outputs' array.
+///         * 'GladiusOrder' in/out amounts additionally resolved, based on
+///           'quantity' argument, passed to 'execute' functions.
+contract GladiusReactor is BaseGladiusReactor {
     using ExclusivityOverrideLib for ResolvedOrder;
+    using PartialFillLib for GladiusOrder;
     using DutchDecayLib for DutchOutput[];
     using DutchDecayLib for DutchInput;
     using Permit2Lib for ResolvedOrder;
     using PartialFillLib for uint256;
 
-    /// @notice thrown when 'outputs' array has >1 length.
+    /// @notice Thrown when 'outputs' array's length != 1.
     error InvalidOutLength();
-    /// @notice thrown when an order's deadline is before its end time
+    /// @notice Thrown when an order's deadline is before its end time.
     error DeadlineBeforeEndTime();
-    /// @notice thrown when an order's end time is before its start time
+    /// @notice Thrown when an order's end time is before its start time.
     error OrderEndTimeBeforeStartTime();
-    /// @notice thrown when an order's inputs and outputs both decay
+    /// @notice Thrown when an order's inputs and outputs both decay.
     error InputAndOutputDecay();
 
-    function getPayAmount(
-        SignedOrder calldata signedOrder
-    ) external view returns (uint256 spend) {
-        spend = resolve(signedOrder).outputs[0].amount;
-    }
-
-    /// @notice Resolves order into an Exclusive Dutch order. With applied
-    ///         decay function and partition function on in/out amounts.
-    /// @notice 'signedOrder.order' = abi.encode(order, quantity).
-    ///          * order    - abi encoded 'ExclusiveDutchOrderWithPF'.
-    ///          * quantity - uint256 amount to buy from the 'order'
-    ///                       in the form of 'order.input.token'.
+    /// @notice Resolves order into a 'GladiusOrder' and applies a decay
+    ///         function and a partition function on its in/out amounts.
     function resolve(
-        SignedOrder calldata signedOrder
+        SignedOrder calldata signedOrder,
+        uint256 quantity
     ) internal view override returns (ResolvedOrder memory resolvedOrder) {
-        /// @dev 'signedOrder.order' should be encoded on a client-side,
-        ///      by the executor of this order.
-        (ExclusiveDutchOrderWithPF memory order, uint256 quantity) = abi.decode(
+        GladiusOrder memory order = abi.decode(
             signedOrder.order,
-            (ExclusiveDutchOrderWithPF, uint256)
+            (GladiusOrder)
         );
 
         _validateOrder(order);
@@ -68,7 +59,7 @@ contract GladiusReactor is BaseReactor {
         (input, outputs) = quantity.applyPartition(
             input,
             outputs,
-            order.outputFillThreshold
+            order.fillThreshold
         );
 
         resolvedOrder = ResolvedOrder({
@@ -85,7 +76,7 @@ contract GladiusReactor is BaseReactor {
         );
     }
 
-    /// @inheritdoc BaseReactor
+    /// @inheritdoc BaseGladiusReactor
     function transferInputTokens(
         ResolvedOrder memory order,
         address to
@@ -107,9 +98,7 @@ contract GladiusReactor is BaseReactor {
     /// - if there's input decay, outputs must not decay
     /// - for input decay, startAmount must < endAmount
     /// @dev Reverts if the order is invalid
-    function _validateOrder(
-        ExclusiveDutchOrderWithPF memory order
-    ) internal pure {
+    function _validateOrder(GladiusOrder memory order) internal pure {
         if (order.outputs.length != 1) revert InvalidOutLength();
 
         if (order.info.deadline < order.decayEndTime)
