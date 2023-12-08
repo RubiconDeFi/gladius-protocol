@@ -8,23 +8,23 @@ import {OrderInfo} from "../base/ReactorStructs.sol";
 import {DutchOrderLib} from "./DutchOrderLib.sol";
 import {OrderInfoLib} from "./OrderInfoLib.sol";
 
-struct ExclusiveDutchOrderWithPF {
-    // generic order information
+struct GladiusOrder {
+    // Generic order information.
     OrderInfo info;
-    // The time at which the DutchOutputs start decaying
+    // The time at which the 'DutchOutputs' start decaying.
     uint256 decayStartTime;
-    // The time at which price becomes static
+    // The time at which price becomes static.
     uint256 decayEndTime;
-    // The address who has exclusive rights to the order until decayStartTime
+    // The address who has exclusive rights to the order until 'decayStartTime'.
     address exclusiveFiller;
-    // The amount in bps that a non-exclusive filler needs to improve the outputs by to be able to fill the order
+    // The amount in bps that a non-exclusive filler needs to improve the outputs by to be able to fill the order.
     uint256 exclusivityOverrideBps;
-    // The tokens that the swapper will provide when settling the order
+    // The tokens that the swapper will provide when settling the order.
     DutchInput input;
-    // The tokens that must be received to satisfy the order
+    // The tokens that must be received to satisfy the order.
     DutchOutput[] outputs;
-    // Minimum amount of output, to be received in a case of a partial fill.
-    uint256 outputFillThreshold;
+    // Minimum amount of input token, that can be partially filled by taker.
+    uint256 fillThreshold;
 }
 
 /// @dev Library for handling Dutch orders that can be partially filled.
@@ -39,14 +39,14 @@ library PartialFillLib {
     error PartialFillUnderflow();
     /// @notice Thrown, if threshold isn't in a valid range.
     error InvalidThreshold();
-    /// @notice Thrown, if amount to pay for an order, is less than set threshold.
-    error SpendLtThreshold();
+    /// @notice Thrown, if 'quantity' to take from an order, is less than order's threshold.
+    error QuantityLtThreshold();
     /// @notice Thrown, when a rounding error, implies into a precision loss of >0.1%
     error RelativeErrTooBig();
 
-    bytes internal constant EXCLUSIVE_DUTCH_PF_ORDER_TYPE =
+    bytes internal constant GLADIUS_ORDER_TYPE =
         abi.encodePacked(
-            "ExclusiveDutchOrderWithPF(",
+            "GladiusOrder(",
             "OrderInfo info,",
             "uint256 decayStartTime,",
             "uint256 decayEndTime,",
@@ -56,11 +56,11 @@ library PartialFillLib {
             "uint256 inputStartAmount,",
             "uint256 inputEndAmount,",
             "DutchOutput[] outputs,",
-            "uint256 outputFillThreshold)"
+            "uint256 fillThreshold)"
         );
     bytes internal constant ORDER_TYPE =
         abi.encodePacked(
-            EXCLUSIVE_DUTCH_PF_ORDER_TYPE,
+            GLADIUS_ORDER_TYPE,
             DutchOrderLib.DUTCH_OUTPUT_TYPE,
             OrderInfoLib.ORDER_INFO_TYPE
         );
@@ -70,9 +70,9 @@ library PartialFillLib {
     string internal constant PERMIT2_ORDER_TYPE =
         string(
             abi.encodePacked(
-                "ExclusiveDutchOrderWithPF witness)",
+                "GladiusOrder witness)",
                 DutchOrderLib.DUTCH_OUTPUT_TYPE,
-                EXCLUSIVE_DUTCH_PF_ORDER_TYPE,
+                GLADIUS_ORDER_TYPE,
                 OrderInfoLib.ORDER_INFO_TYPE,
                 DutchOrderLib.TOKEN_PERMISSIONS_TYPE
             )
@@ -82,14 +82,14 @@ library PartialFillLib {
     /// @param quantity - amount in the form of 'input.token' to buy from the order.
     /// @param input - 'InputToken' struct after applied decay fn.
     /// @param output - 'OutputToken[1]' struct after applied decay fn.
-    /// @param outputFillThreshold - min amount out, that should be filled.
+    /// @param fillThreshold - min amount of input, that should be filled.
     function applyPartition(
         uint256 quantity,
         InputToken memory input,
         OutputToken[] memory output,
-        uint256 outputFillThreshold
-    ) internal view returns (InputToken memory, OutputToken[] memory) {
-        _validateThreshold(outputFillThreshold, output[0].amount);
+        uint256 fillThreshold
+    ) internal pure returns (InputToken memory, OutputToken[] memory) {
+        _validateThreshold(fillThreshold, input.amount);
 
         uint256 spend = quantity.mulDivUp(output[0].amount, input.amount);
 
@@ -98,7 +98,7 @@ library PartialFillLib {
             spend,
             input.amount,
             output[0].amount,
-            outputFillThreshold
+            fillThreshold
         );
 
         // Mutate amounts in structs.
@@ -109,10 +109,10 @@ library PartialFillLib {
     }
 
     /// @dev Partition is valid if:
-    ///      * {0 < q ≤ i}
-    ///      * {t < s ≤ o}
+    ///      * {t ≤ q ≤ i}
+    ///      * {0 < s ≤ o}
     ///
-    ///      t - outputFillThreshold
+    ///      t - fillThreshold
     ///      q - quantity
     ///      s - spend
     ///      i - order.input.amount
@@ -122,12 +122,12 @@ library PartialFillLib {
         uint256 _spend,
         uint256 _initIn,
         uint256 _initOut,
-        uint256 _outputFillThreshold
-    ) internal view {
+        uint256 _fillThreshold
+    ) internal pure {
         if (_quantity > _initIn || _spend > _initOut)
             revert PartialFillOverflow();
         if (_quantity == 0 || _spend == 0) revert PartialFillUnderflow();
-        if (_spend < _outputFillThreshold) revert SpendLtThreshold();
+        if (_quantity < _fillThreshold) revert QuantityLtThreshold();
 
         // Check for precision loss.
         uint256 _rem = (_quantity * _initOut) % _initIn;
@@ -136,23 +136,23 @@ library PartialFillLib {
         if (_isError) revert RelativeErrTooBig();
     }
 
-    /// @dev '_outputFillThreshold' is valid if:
-    ///      * {0 ≤ t ≤ o}
+    /// @dev Order's 'fillThreshold' is valid if:
+    ///      * {0 ≤ t ≤ i}
     ///
-    ///      t - outputFillThreshold
-    ///      o - order.outputs[0].amount
+    ///      t - fillThreshold,
+    ///      i - input.amount
     function _validateThreshold(
-        uint256 _outputFillThreshold,
-        uint256 _outAmt
+        uint256 _fillThreshold,
+        uint256 _inAmt
     ) internal pure {
-        if (_outputFillThreshold > _outAmt) revert InvalidThreshold();
+        if (_fillThreshold > _inAmt) revert InvalidThreshold();
     }
 
     /// @notice hash the given order
     /// @param order the order to hash
     /// @return the eip-712 order hash
     function hash(
-        ExclusiveDutchOrderWithPF memory order
+        GladiusOrder memory order
     ) internal pure returns (bytes32) {
         return
             keccak256(
@@ -167,7 +167,7 @@ library PartialFillLib {
                     order.input.startAmount,
                     order.input.endAmount,
                     order.outputs.hash(),
-                    order.outputFillThreshold
+                    order.fillThreshold
                 )
             );
     }
