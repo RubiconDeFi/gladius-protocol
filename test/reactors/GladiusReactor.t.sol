@@ -44,18 +44,18 @@ contract GladiusReactorTest is
     //  ----------------------------
     // |  input.amount        | 100 |
     // |  outputs[0].amount   | 200 |
-    // |  fillThreshold       |  25 | min. fill => 25 out of 200
+    // |  fillThreshold       |  50 | min. fill => 50 out of 100
     //  ----------------------------
     uint256 public inputAmount = 100e18;
     uint256 public outputAmount = 200e18;
-    uint256 public fillThreshold = 25e17;
+    uint256 public fillThreshold = 50e17;
 
     //------------ DEFAULT FILL PARAMS
     // Take 90 out of 100 input^
     uint256 public quantity = 90e18;
 
     function name() public pure override returns (string memory) {
-        return "ExclusiveDutchOrderWithPF";
+        return "GladiusOrder";
     }
 
     function createReactor() public override returns (BaseGladiusReactor) {
@@ -110,6 +110,353 @@ contract GladiusReactorTest is
                 signOrder(swapperPrivateKey, address(permit2), order)
             ),
             orderHash
+        );
+    }
+
+    //-------------------------- PARTIAL FILL TESTS --------------------------
+
+    /// @dev Partially fill 1 resting order (X/Y), with 2 aggressive ones (Y/X):
+    ///       ------------------------------
+    ///      |         X/Y pair             |
+    ///       ------------------------------
+    ///      | (X/Y (sell 1000) (buy 2000)) | <-----
+    ///      |                              |       | match
+    ///      | (Y/X (sell 200)  (buy 100))  | ------|
+    ///      | (Y/X (sell 1000) (buy 500))  | ______|
+    ///       ------------------------------
+    function test_PartFill1RestingWith2Aggressive() public {
+        // (X/Y (sell 1000) (buy 2000))
+        GladiusOrder memory ask = customAsk(1_000e18, 2_000e18);
+        // (Y/X (sell 200)  (buy 100))
+        GladiusOrder memory bid0 = defaultBid();
+        // (Y/X (sell 1000) (buy 500))
+        GladiusOrder memory bid1 = customOrder(
+            address(tokenOut),
+            address(tokenIn),
+            1_000e18,
+            500e18,
+            swapper3,
+            1
+        );
+
+        // Mint && approve amts for all 3 orders.
+        mintAndApproveTwoSides(ask.input.endAmount, bid0.input.endAmount);
+        mintAndApprove(
+            address(bid1.input.token),
+            bid1.input.endAmount,
+            address(swapper3)
+        );
+
+        (
+            uint256 swapperBalanceIN_0,
+            uint256 swapperBalanceOUT_0
+        ) = saveBalances(address(swapper));
+        (
+            uint256 swapper2BalanceIN_0,
+            uint256 swapper2BalanceOUT_0
+        ) = saveBalances(address(swapper2));
+        (
+            uint256 swapper3BalanceIN_0,
+            uint256 swapper3BalanceOUT_0
+        ) = saveBalances(address(swapper3));
+
+        // Generate aforementioned orders.
+        SignedOrder[] memory orders = new SignedOrder[](3);
+        orders[0] = generateSignedOrder(ask);
+        orders[1] = generateSignedOrderWithPk(bid0, swapper2Pk);
+        orders[2] = generateSignedOrderWithPk(bid1, swapper3Pk);
+
+        uint256[] memory quantities = new uint256[](orders.length);
+        /// @dev 'quantity' is a sum of buy amts of 2 bids.
+        quantities[0] = bid0.outputs[0].endAmount + bid1.outputs[0].endAmount;
+        /// @dev 'quantity' is amount, that 'bid0' sells.
+        ///      * 'bid0' will be fully filled.
+        quantities[1] = bid0.input.endAmount;
+        /// @dev 'quantity' is amount, that 'bid1' sells.
+        ///      * 'bid1' will be fully filled.
+        quantities[2] = bid1.input.endAmount;
+
+        /// @dev Trade 2 bids against 1 ask.
+        fillContract.executeBatch(orders, quantities);
+
+        /// @dev After execution, 2 bids were fully filled,
+        ///      while 1 ask, was filled partially.
+        ///       -----------------------------
+        ///      |         X/Y pair            |
+        ///       -----------------------------
+        ///      | (X/Y (sell 400)  (buy 800)) | <--- cancelled(*) from the book
+        ///      |                             |
+        ///      | (Y/X (sell 0)    (buy 0))   | <---| Both orders were
+        ///      | (Y/X (sell 0)    (buy 0))   | ____| fully filled.
+        ///       -----------------------------
+        /// * it's not really cancelled, but rather the
+        ///   remaining amounts can't be executed anymore.
+        //-------------------- SWAPPER ASSERTIONS
+
+        /// @dev 'swapper' has the remaining input amount on his balance.
+        assertEq(tokenIn.balanceOf(swapper), 400e18);
+        /// @dev 'swapper' spent input amount, that equals to
+        ///      a sum of output amounts of 2 bids.
+        assertEq(
+            (swapperBalanceIN_0 - tokenIn.balanceOf(swapper)),
+            bid0.outputs[0].endAmount + bid1.outputs[0].endAmount
+        );
+        /// @dev 'swapper' received an amount of output tokens,
+        ///      that equals to a sum of input amounts of 2 bids.
+        assertEq(
+            (tokenOut.balanceOf(swapper) - swapperBalanceOUT_0),
+            bid0.input.endAmount + bid1.input.endAmount
+        );
+
+        //-------------------- SWAPPER_2 ASSERTIONS
+
+        /// @dev 'swapper2' has received the exact output amount of his bid.
+        assertEq(
+            (tokenIn.balanceOf(swapper2) - swapper2BalanceIN_0),
+            bid0.outputs[0].endAmount
+        );
+        /// @dev 'swapper2' spent the exact input amount of his bid.
+        assertEq(
+            (swapper2BalanceOUT_0 - tokenOut.balanceOf(swapper2)),
+            bid0.input.endAmount
+        );
+
+        //-------------------- SWAPPER_3 ASSERTIONS
+
+        /// @dev All the same assertions as for 'swapper2'
+        assertEq(
+            (tokenIn.balanceOf(swapper3) - swapper3BalanceIN_0),
+            bid1.outputs[0].endAmount
+        );
+        assertEq(
+            (swapper3BalanceOUT_0 - tokenOut.balanceOf(swapper3)),
+            bid1.input.endAmount
+        );
+    }
+
+    /// @dev Fully match ask and bid together:
+    ///       ----------------------------
+    ///      |         X/Y pair           |
+    ///       ----------------------------
+    ///      | (X/Y (sell 100) (buy 200)) | <-----
+    ///      |                            |       | match
+    ///      | (Y/X (sell 200) (buy 100)) | <-----
+    ///       ----------------------------
+    function test_ExactMatch() public {
+        // (X/Y (sell 100) (buy 200))
+        GladiusOrder memory ask = defaultAsk();
+        // (Y/X (sell 200) (buy 100))
+        GladiusOrder memory bid = defaultBid();
+
+        // Mint respective amounts for both swappers.
+        mintAndApproveTwoSides(inputAmount, outputAmount);
+
+        (
+            uint256 swapperBalanceIN_0,
+            uint256 swapperBalanceOUT_0
+        ) = saveBalances(swapper);
+        (
+            uint256 swapper2BalanceIN_0,
+            uint256 swapper2BalanceOUT_0
+        ) = saveBalances(swapper2);
+
+        SignedOrder[] memory orders = new SignedOrder[](2);
+        orders[0] = generateSignedOrder(ask);
+        orders[1] = generateSignedOrderWithPk(bid, swapper2Pk);
+
+        /// @dev Fully take both orders.
+        uint256[] memory quantities = new uint256[](orders.length);
+        quantities[0] = ask.input.endAmount;
+        quantities[1] = bid.input.endAmount;
+
+        fillContract.executeBatch(orders, quantities);
+
+        /// @dev After execution, both orders are fully filled.
+        ///       ------------------------
+        ///      |         X/Y pair       |
+        ///       ------------------------
+        ///      | (X/Y (sell 0) (buy 0)) | <---
+        ///      |                        |     | fully executed
+        ///      | (Y/X (sell 0) (buy 0)) | <---
+        ///       ------------------------
+        //-------------------- SWAPPER ASSERTIONS
+
+        /// @dev Fot both swappers we assert, that they spent and received
+        ///      the exact amounts from their orders.
+        assertEq(
+            (swapperBalanceIN_0 - tokenIn.balanceOf(swapper)),
+            inputAmount
+        );
+        assertEq(
+            (tokenOut.balanceOf(swapper) - swapperBalanceOUT_0),
+            outputAmount
+        );
+
+        //-------------------- SWAPPER_2 ASSERTIONS
+        assertEq(
+            (swapper2BalanceOUT_0 - tokenOut.balanceOf(swapper2)),
+            outputAmount
+        );
+        assertEq(
+            (tokenIn.balanceOf(swapper2) - swapper2BalanceIN_0),
+            inputAmount
+        );
+    }
+
+    /// @dev Partially fill 1 order.
+    function test_ExecutePartialFill() public {
+        GladiusOrder memory order = defaultAsk();
+
+        (
+            InputToken memory inPf,
+            OutputToken[] memory outPf
+        ) = applyDecayAndPartition(order, quantity);
+
+        mintAndApprove(
+            address(tokenIn),
+            order.input.endAmount,
+            address(swapper)
+        );
+        tokenOut.mint(address(fillContract), outPf[0].amount);
+        tokenOut.forceApprove(
+            address(fillContract),
+            address(reactor),
+            outPf[0].amount
+        );
+
+        (
+            uint256 swapperBalanceIN_0,
+            uint256 swapperBalanceOUT_0
+        ) = saveBalances(address(swapper));
+        (uint256 fillerBalanceIN_0, uint256 fillerBalanceOUT_0) = saveBalances(
+            address(fillContract)
+        );
+
+        /// @dev Partially fill the default order:
+        ///       ---------                       ---------
+        ///      | sell    |                     |         |
+        ///      | 100     |                     |~~~~~~~~~|
+        ///      |         |                     | sold    | <- buy 90 out of 100
+        ///      |         |                     | 90      |
+        ///      |=========| ---PARTIAL FILL---> |=========|
+        ///      | buy     |                     |         |
+        ///      | 200     |                     |~~~~~~~~~|
+        ///      |         |                     | bought  | <- thus, amount to spend
+        ///      |         |                     | 180     |    for filler is 180
+        ///       ---------                       ---------
+        fillContract.execute(generateSignedOrder(order), quantity);
+
+        //-------------------- SWAPPER ASSERTIONS
+
+        /// @dev 'swapper' spent only 90 input tokens.
+        assertEq(
+            (swapperBalanceIN_0 - tokenIn.balanceOf(swapper)),
+            inPf.amount
+        );
+        /// @dev 'swapper' bought only 180 output tokens.
+        assertEq(
+            (tokenOut.balanceOf(swapper) - swapperBalanceOUT_0),
+            outPf[0].amount
+        );
+
+        //-------------------- FILLER ASSERTIONS
+
+        /// @dev 'filler' bought 90 input tokens
+        assertEq(
+            (tokenIn.balanceOf(address(fillContract)) - fillerBalanceIN_0),
+            inPf.amount
+        );
+        /// @dev 'filler' spent 180 output tokens
+        assertEq(
+            (fillerBalanceOUT_0 - tokenOut.balanceOf(address(fillContract))),
+            outPf[0].amount
+        );
+    }
+
+    /// @dev Fuzz version of 'test_ExecutePartialFill'.
+    function testFuzz_ExecutePartialFill(
+        uint256 inAmt,
+        uint256 outAmt,
+        uint256 quant,
+        uint256 threshold
+    ) public {
+        inAmt = bound(inAmt, 1e4, type(uint128).max);
+        outAmt = bound(outAmt, 1e4, type(uint128).max);
+        threshold = bound(threshold, 1e3, inAmt);
+        quant = bound(quant, threshold, inAmt);
+	
+        GladiusOrder memory order = customOrder(
+            address(tokenIn),
+            address(tokenOut),
+            inAmt,
+            outAmt,
+            address(swapper),
+            threshold
+        );
+
+        (
+            InputToken memory inPf,
+            OutputToken[] memory outPf
+        ) = applyDecayAndPartition(order, quant);
+
+        mintAndApprove(
+            address(tokenIn),
+            order.input.endAmount,
+            address(swapper)
+        );
+        tokenOut.mint(address(fillContract), outPf[0].amount);
+        tokenOut.forceApprove(
+            address(fillContract),
+            address(reactor),
+            outPf[0].amount
+        );
+
+        (
+            uint256 swapperBalanceIN_0,
+            uint256 swapperBalanceOUT_0
+        ) = saveBalances(address(swapper));
+        (uint256 fillerBalanceIN_0, uint256 fillerBalanceOUT_0) = saveBalances(
+            address(fillContract)
+        );
+
+        /// @dev Partially fill the default order:
+        ///       ---------                       ---------
+        ///      | sell    |                     |         |
+        ///      | 100     |                     |~~~~~~~~~|
+        ///      |         |                     | sold    | <- buy 90 out of 100
+        ///      |         |                     | 90      |
+        ///      |=========| ---PARTIAL FILL---> |=========|
+        ///      | buy     |                     |         |
+        ///      | 200     |                     |~~~~~~~~~|
+        ///      |         |                     | bought  | <- thus, amount to spend
+        ///      |         |                     | 180     |    for filler is 180
+        ///       ---------                       ---------
+        fillContract.execute(generateSignedOrder(order), quant);
+
+        //-------------------- SWAPPER ASSERTIONS
+
+        /// @dev 'swapper' spent only 90 input tokens.
+        assertEq(
+            (swapperBalanceIN_0 - tokenIn.balanceOf(swapper)),
+            inPf.amount
+        );
+        /// @dev 'swapper' bought only 180 output tokens.
+        assertEq(
+            (tokenOut.balanceOf(swapper) - swapperBalanceOUT_0),
+            outPf[0].amount
+        );
+
+        //-------------------- FILLER ASSERTIONS
+
+        /// @dev 'filler' bought 90 input tokens
+        assertEq(
+            (tokenIn.balanceOf(address(fillContract)) - fillerBalanceIN_0),
+            inPf.amount
+        );
+        /// @dev 'filler' spent 180 output tokens
+        assertEq(
+            (fillerBalanceOUT_0 - tokenOut.balanceOf(address(fillContract))),
+            outPf[0].amount
         );
     }
 
@@ -192,7 +539,7 @@ contract GladiusReactorTest is
     //============================ HELEPRS ============================
 
     /// @dev Mint tokens for both swappers, and approve amounts to 'permit2'.
-    /*function mintAndApproveTwoSides(uint256 amt0, uint256 amt1) internal {
+    function mintAndApproveTwoSides(uint256 amt0, uint256 amt1) internal {
         mintAndApprove(address(tokenIn), amt0, address(swapper));
         mintAndApprove(address(tokenOut), amt1, address(swapper2));
     }
@@ -213,8 +560,11 @@ contract GladiusReactorTest is
     /// @return i - 'InputToken' struct after applied decay and partition.
     /// @return o - 'OutputToken' struct after applied decay and partition.
     function applyDecayAndPartition(
-        GladiusOrder memory order
+        GladiusOrder memory order,
+	uint256 quant
     ) internal returns (InputToken memory, OutputToken[] memory) {
+	console.log(order.fillThreshold);
+	
         /// @dev Apply decay function.
         InputToken memory input = order.input.decay(
             order.decayStartTime,
@@ -226,8 +576,8 @@ contract GladiusReactorTest is
         );
 
         /// @dev Apply partition function.
-        (InputToken memory inPf, OutputToken[] memory outPf) = quantity
-            .applyPartition(input, outputs, fillThreshold);
+        (InputToken memory inPf, OutputToken[] memory outPf) = quant
+            .applyPartition(input, outputs, order.fillThreshold);
 
         uint256 initialExchangeRate = (
             input.amount.divWadUp(outputs[0].amount)
@@ -237,5 +587,5 @@ contract GladiusReactorTest is
         assertEq(initialExchangeRate, newExchangeRate);
 
         return (inPf, outPf);
-    }*/
+    }
 }
