@@ -7,13 +7,13 @@ import {ECDSA} from "openzeppelin-contracts/utils/cryptography/ECDSA.sol";
 import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol";
 import {LimitOrder, LimitOrderLib} from "../../src/lib/LimitOrderLib.sol";
 import {DutchOrder, DutchOrderLib} from "../../src/lib/DutchOrderLib.sol";
-import {ExclusiveDutchOrderWithPF, PartialFillLib} from "../../src/lib/PartialFillLib.sol";
+import {GladiusOrder, PartialFillLib} from "../../src/lib/PartialFillLib.sol";
 import {ExclusiveDutchOrder, ExclusiveDutchOrderLib} from "../../src/lib/ExclusiveDutchOrderLib.sol";
 import {OrderInfo, InputToken} from "../../src/base/ReactorStructs.sol";
 
 contract PermitSignature is Test {
     using ExclusiveDutchOrderLib for ExclusiveDutchOrder;
-    using PartialFillLib for ExclusiveDutchOrderWithPF;
+    using PartialFillLib for GladiusOrder;
     using DutchOrderLib for DutchOrder;
     using LimitOrderLib for LimitOrder;
 
@@ -46,7 +46,7 @@ contract PermitSignature is Test {
             )
         );
 
-    bytes32 constant EXCLUSIVE_DUTCH_PF_ORDER_TYPE_HASH =
+    bytes32 constant GLADIUS_ORDER_TYPE_HASH =
         keccak256(
             abi.encodePacked(TYPEHASH_STUB, PartialFillLib.PERMIT2_ORDER_TYPE)
         );
@@ -160,7 +160,7 @@ contract PermitSignature is Test {
     function signOrder(
         uint256 privateKey,
         address permit2,
-        ExclusiveDutchOrderWithPF memory order
+        GladiusOrder memory order
     ) internal view returns (bytes memory sig) {
         return
             signOrder(
@@ -169,7 +169,7 @@ contract PermitSignature is Test {
                 order.info,
                 address(order.input.token),
                 order.input.endAmount,
-                EXCLUSIVE_DUTCH_PF_ORDER_TYPE_HASH,
+                GLADIUS_ORDER_TYPE_HASH,
                 order.hash()
             );
     }
