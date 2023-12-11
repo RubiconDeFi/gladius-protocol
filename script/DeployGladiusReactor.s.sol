@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.13;
 
+import {GladiusOrderQuoter} from "../src/lens/GladiusOrderQuoter.sol";
 import {GladiusReactor} from "../src/reactors/GladiusReactor.sol";
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 import {DeployPermit2} from "../test/util/DeployPermit2.sol";
-import {OrderQuoter} from "../src/lens/OrderQuoter.sol";
 import {DeployProxy} from "./ProxyDeployment.sol";
 import "forge-std/console2.sol";
 import "forge-std/Script.sol";
@@ -12,7 +12,7 @@ import "forge-std/Script.sol";
 struct GladiusDeployment {
     IPermit2 permit2;
     GladiusReactor reactor;
-    //OrderQuoter quoter;
+    GladiusOrderQuoter quoter;
 }
 
 contract DeployGladiusReactor is Script, DeployPermit2, DeployProxy {
@@ -28,7 +28,7 @@ contract DeployGladiusReactor is Script, DeployPermit2, DeployProxy {
             deployPermit2();
         }
 
-        GladiusReactor reactor = new GladiusReactor();
+        GladiusReactor reactor = new GladiusReactor{salt: bytes32(uint256(1))}();
         console2.log("GladiusReactor implementation", address(reactor));
 
         address payable proxy = deployProxy(address(reactor), "");
@@ -37,11 +37,11 @@ contract DeployGladiusReactor is Script, DeployPermit2, DeployProxy {
         GladiusReactor(proxy).initialize(PERMIT2, RUBICON_ETH);
         console2.log("Proxy is initialized");
 
-        //OrderQuoter quoter = new OrderQuoter();
-        //console2.log("Quoter", address(quoter));
+        GladiusOrderQuoter quoter = new GladiusOrderQuoter{salt: bytes32(uint256(2))}();
+        console2.log("Quoter", address(quoter));
 
         vm.stopBroadcast();
 
-        return GladiusDeployment(IPermit2(PERMIT2), reactor);
+        return GladiusDeployment(IPermit2(PERMIT2), reactor, quoter);
     }
 }
