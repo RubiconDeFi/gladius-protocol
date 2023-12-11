@@ -27,10 +27,14 @@ abstract contract BaseGladiusReactor is
 
     bool public initialized;
 
-    // Occurs when an output = ETH and the reactor does contain enough ETH but
-    // the direct filler did not include enough ETH in their call to execute/executeBatch
+    /// @notice Thrown when an output = ETH and the reactor does contain enough ETH,
+    ///         but the direct filler did not include enough ETH in their
+    ///         call to 'execute'/'executeBatch'
     error InsufficientEth();
+    /// @notice For constructor-like 'initialize' function.
     error AlreadyInitialized();
+    /// @notice Thrown if length of quantites and orders for batch execute isn't the same.
+    error LengthMismatch();
 
     /// @notice permit2 address used for token transfers and signature verification
     IPermit2 public permit2;
@@ -77,7 +81,9 @@ abstract contract BaseGladiusReactor is
         SignedOrder[] calldata orders,
         uint256[] calldata quantities
     ) external payable override nonReentrant {
-        uint256 ordersLength = orders.length;
+        uint256 ordersLength = orders.length;	
+	if (quantities.length != ordersLength) revert LengthMismatch();
+	    
         ResolvedOrder[] memory resolvedOrders = new ResolvedOrder[](
             ordersLength
         );
@@ -99,6 +105,8 @@ abstract contract BaseGladiusReactor is
         bytes calldata callbackData
     ) external payable override nonReentrant {
         uint256 ordersLength = orders.length;
+	if (quantities.length != ordersLength) revert LengthMismatch();
+	
         ResolvedOrder[] memory resolvedOrders = new ResolvedOrder[](
             ordersLength
         );
