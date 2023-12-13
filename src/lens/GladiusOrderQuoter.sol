@@ -1,23 +1,27 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-pragma solidity ^0.8.0;
+pragma solidity 0.8.19;
 
 import {OrderInfo, ResolvedOrder, SignedOrder} from "../base/ReactorStructs.sol";
 import {IReactorCallback} from "../interfaces/IReactorCallback.sol";
 import {IGladiusReactor} from "../interfaces/IGladiusReactor.sol";
 
 /// @notice Quoter contract for orders
-/// @dev note this is meant to be used as an off-chain lens contract to pre-validate generic orders
+/// @dev Meant to be used as an off-chain lens contract to pre-validate generic orders.
 contract GladiusOrderQuoter is IReactorCallback {
-    /// @notice thrown if reactorCallback receives more than one order
+    /// @notice Thrown if reactorCallback receives more than one order.
     error OrdersLengthIncorrect();
 
     uint256 constant ORDER_INFO_OFFSET = 64;
 
-    /// @notice Quote the given order, returning the ResolvedOrder object which defines
-    /// the current input and output token amounts required to satisfy it
-    /// Also bubbles up any reverts that would occur during the processing of the order
-    /// @param order abi-encoded order, including `reactor` as the first encoded struct member
+    /// @notice Quote the given order, returning the 'ResolvedOrder' object which defines
+    ///         the current input and output token amounts required to satisfy it
+    ///         Also bubbles up any reverts that would occur
+    ///         during the processing of the order.
+    /// @param order abi-encoded order, including `reactor` as the first
+    ///        encoded struct member
     /// @param sig The order signature
+    /// @param quantity Gladius-specific param, that specifies part of the
+    ///        'input.amount to take from an 'order'
     /// @return result The ResolvedOrder
     function quote(
         bytes memory order,

@@ -9,7 +9,7 @@ import {BaseGladiusReactor} from "./BaseGladiusReactor.sol";
 import {DutchDecayLib} from "../lib/DutchDecayLib.sol";
 import {Permit2Lib} from "../lib/Permit2Lib.sol";
 
-/// @notice Reactor for exclusive Dutch orders (aka Gladius Orders).
+/// @notice Reactor for 'GladiusOrders' - exclusive Dutch orders.
 ///         The main differences between 'GladiusOrder' and 'ExclusiveDutchOrder' are:
 ///         * 'GladiusOrder' supports partial fills
 ///         * 'GladiusOrder' allows only 1 element in 'outputs' array.
@@ -23,7 +23,7 @@ contract GladiusReactor is BaseGladiusReactor {
     using Permit2Lib for ResolvedOrder;
     using PartialFillLib for uint256;
 
-    /// @notice Thrown when 'outputs' array's length != 1.
+    /// @notice Thrown when 'outputs' length != 1.
     error InvalidOutLength();
     /// @notice Thrown when an order's deadline is before its end time.
     error DeadlineBeforeEndTime();
@@ -32,7 +32,7 @@ contract GladiusReactor is BaseGladiusReactor {
     /// @notice Thrown when an order's inputs and outputs both decay.
     error InputAndOutputDecay();
 
-    /// @notice Resolves order into a 'GladiusOrder' and applies a decay
+    /// @notice Resolves order into 'GladiusOrder' and applies a decay
     ///         function and a partition function on its in/out amounts.
     function resolve(
         SignedOrder calldata signedOrder,
