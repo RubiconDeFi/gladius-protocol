@@ -113,7 +113,85 @@ contract GladiusReactorTest is
         );
     }
 
-    //-------------------------- PARTIAL FILL TESTS --------------------------
+    //-------------------------- MATCHING TESTS --------------------------
+
+    /// @dev Match resting bid with aggresive ask, that crosses the spread.
+    ///            ------------------------------
+    ///           |         X/Y pair             |
+    ///            ------------------------------
+    ///  bid:$2   | (Y/X (sell 200)  (buy 100))  | ------------------------
+    ///           |                              |                         |
+    ///  ask:$1.5 | (X/Y (sell 1000) (buy 1500)) | <-- lower than bid => *match* them
+    ///            ------------------------------
+    function test_AskCrossesTheSpread() public {
+        GladiusOrder memory ask = customAsk(1_000e18, 1_500e18);
+        GladiusOrder memory bid = defaultBid();
+
+        mintAndApproveTwoSides(ask.input.endAmount, bid.input.endAmount);
+        (
+            uint256 swapperBalanceIN_0,
+            uint256 swapperBalanceOUT_0
+        ) = saveBalances(address(swapper));
+        (
+            uint256 swapper2BalanceIN_0,
+            uint256 swapper2BalanceOUT_0
+        ) = saveBalances(address(swapper2));
+
+        // Generate orders.
+        SignedOrder[] memory orders = new SignedOrder[](2);
+        orders[0] = generateSignedOrder(ask);
+        orders[1] = generateSignedOrderWithPk(bid, swapper2Pk);
+
+        uint256[] memory quantities = new uint256[](orders.length);
+        /// @dev Accept only 100 X tokens from 'ask',
+        ///      because that's what 'bid' only needs.
+        quantities[0] = bid.outputs[0].endAmount;
+        /// @dev Sell all 200 Y tokens from 'bid',
+        ///      because that's the max. we can sell.
+        quantities[1] = bid.input.endAmount;
+
+        console.log("swapper(in)  0 =", tokenIn.balanceOf(swapper));
+        console.log("swapper(out) 0 =", tokenOut.balanceOf(swapper));
+
+        console.log("swapper2(in)0 =", tokenOut.balanceOf(swapper2));	
+        console.log("swapper2(out) 0 =", tokenIn.balanceOf(swapper2));
+
+        fillContract.executeBatch(orders, quantities);
+
+        /// @dev After execution, bid was fully filled, while ask's
+        ///      execution was similar to how IOC orders behave -
+        ///      it was filled with, as much amount, as possible
+        ///      and its remainders were cancelled.
+        ///   ------------------------------
+        ///  |         X/Y pair             |
+        ///   ------------------------------
+        ///  | (Y/X (sell 0)   (buy 0))     | <- fully filled
+        ///  |                              |
+        ///  | (X/Y (sell 900) (buy 1300))  | <- partially filled & cancelled.
+        ///   ------------------------------
+        //-------------------- SWAPPER (ASK) ASSERTIONS
+
+        console.log("swapper(in)  1 =", tokenIn.balanceOf(swapper));
+        console.log("swapper(out) 1 =", tokenOut.balanceOf(swapper));
+
+        console.log("swapper2(in)1 =", tokenOut.balanceOf(swapper2));
+        console.log("swapper2(out) 1 =", tokenIn.balanceOf(swapper2));
+
+        /// @dev 'swapper' has the remaining input amount on his balance.
+        /*assertEq(tokenIn.balanceOf(swapper), 900e18);
+        /// @dev 'swapper' spent input amount, that equals to
+        ///      the bid's output.
+        assertEq(
+            (swapperBalanceIN_0 - tokenIn.balanceOf(swapper)),
+            quantities[0]
+        );
+        /// @dev 'swapper' received an amount of output tokens,
+        ///      that equals to a an input amount in the bid.
+        assertEq(
+            (tokenOut.balanceOf(swapper) - swapperBalanceOUT_0),
+            quantities[1]
+        );*/
+    }
 
     /// @dev Partially fill 1 resting order (X/Y), with 2 aggressive ones (Y/X):
     ///       ------------------------------
@@ -303,6 +381,8 @@ contract GladiusReactorTest is
         );
     }
 
+    //-------------------------- PARTIAL FILL TESTS --------------------------
+
     /// @dev Partially fill 1 order.
     function test_ExecutePartialFill() public {
         GladiusOrder memory order = defaultAsk();
@@ -384,7 +464,7 @@ contract GladiusReactorTest is
         outAmt = bound(outAmt, 1e4, type(uint128).max);
         threshold = bound(threshold, 1e3, inAmt);
         quant = bound(quant, threshold, inAmt);
-	
+
         GladiusOrder memory order = customOrder(
             address(tokenIn),
             address(tokenOut),
@@ -561,10 +641,10 @@ contract GladiusReactorTest is
     /// @return o - 'OutputToken' struct after applied decay and partition.
     function applyDecayAndPartition(
         GladiusOrder memory order,
-	uint256 quant
+        uint256 quant
     ) internal returns (InputToken memory, OutputToken[] memory) {
-	console.log(order.fillThreshold);
-	
+        console.log(order.fillThreshold);
+
         /// @dev Apply decay function.
         InputToken memory input = order.input.decay(
             order.decayStartTime,
