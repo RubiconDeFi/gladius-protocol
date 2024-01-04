@@ -27,7 +27,8 @@ struct GladiusOrder {
     uint256 fillThreshold;
 }
 
-/// @dev Library for handling Dutch orders that can be partially filled.
+/// @dev Library for handling Gladius orders - Exclusive Dutch orders,
+///      that can be partially filled.
 library PartialFillLib {
     using FixedPointMathLib for uint256;
     using DutchOrderLib for DutchOutput[];
@@ -41,7 +42,7 @@ library PartialFillLib {
     error InvalidThreshold();
     /// @notice Thrown, if 'quantity' to take from an order, is less than order's threshold.
     error QuantityLtThreshold();
-    /// @notice Thrown, when a rounding error, implies into a precision loss of >0.1%
+    /// @notice Thrown, when a rounding error, implies into a precision loss >0.1%
     error RelativeErrTooBig();
 
     bytes internal constant GLADIUS_ORDER_TYPE =
@@ -78,10 +79,10 @@ library PartialFillLib {
             )
         );
 
-    /// @dev Returns parts of input/output amounts to execute.
-    /// @param quantity - amount in the form of 'input.token' to buy from the order.
+    /// @dev Returns parts of 'input' and 'output' amounts to execute.
+    /// @param quantity - amount in the form of 'input.token' to buy from an order.
     /// @param input - 'InputToken' struct after applied decay fn.
-    /// @param output - 'OutputToken[1]' struct after applied decay fn.
+    /// @param output - 'OutputToken[](1)' struct after applied decay fn.
     /// @param fillThreshold - min amount of input, that should be filled.
     function applyPartition(
         uint256 quantity,
@@ -91,11 +92,11 @@ library PartialFillLib {
     ) internal pure returns (InputToken memory, OutputToken[] memory) {
         _validateThreshold(fillThreshold, input.amount);
 
-        uint256 spend = quantity.mulDivUp(output[0].amount, input.amount);
+        uint256 outPart = quantity.mulDivUp(output[0].amount, input.amount);
 
         _validatePartition(
             quantity,
-            spend,
+            outPart,
             input.amount,
             output[0].amount,
             fillThreshold
@@ -103,30 +104,30 @@ library PartialFillLib {
 
         // Mutate amounts in structs.
         input.amount = quantity;
-        output[0].amount = spend;
+        output[0].amount = outPart;
 
         return (input, output);
     }
 
     /// @dev Partition is valid if:
     ///      * {t ≤ q ≤ i}
-    ///      * {0 < s ≤ o}
+    ///      * {0 < p ≤ o}
     ///
     ///      t - fillThreshold
     ///      q - quantity
-    ///      s - spend
+    ///      p - outPart
     ///      i - order.input.amount
     ///      o - order.outputs[0].amount
     function _validatePartition(
         uint256 _quantity,
-        uint256 _spend,
+        uint256 _outPart,
         uint256 _initIn,
         uint256 _initOut,
         uint256 _fillThreshold
     ) internal pure {
-        if (_quantity > _initIn || _spend > _initOut)
+        if (_quantity > _initIn || _outPart > _initOut)
             revert PartialFillOverflow();
-        if (_quantity == 0 || _spend == 0) revert PartialFillUnderflow();
+        if (_quantity == 0 || _outPart == 0) revert PartialFillUnderflow();
         if (_quantity < _fillThreshold) revert QuantityLtThreshold();
 
         // Check for precision loss.
@@ -151,9 +152,7 @@ library PartialFillLib {
     /// @notice hash the given order
     /// @param order the order to hash
     /// @return the eip-712 order hash
-    function hash(
-        GladiusOrder memory order
-    ) internal pure returns (bytes32) {
+    function hash(GladiusOrder memory order) internal pure returns (bytes32) {
         return
             keccak256(
                 abi.encode(
