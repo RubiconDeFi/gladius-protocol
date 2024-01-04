@@ -612,14 +612,14 @@ contract GladiusReactorTest is
         assertEq(
             (tokenIn.balanceOf(address(fillContract)) - fillerBalanceIN_0),
             inPf.amount
-        );
         assertEq(
+        );
             (fillerBalanceOUT_0 - tokenOut.balanceOf(address(fillContract))),
             outPf[0].amount
         );
     }
 
-    //-------------------------- HERLPERS --------------------------
+    //-------------------------- ORDERS --------------------------
 
     function generateSignedOrder(
         GladiusOrder memory order
@@ -639,8 +639,6 @@ contract GladiusReactorTest is
         bytes memory sig = signOrder(privateKey, address(permit2), order);
         result = SignedOrder(abi.encode(order), sig);
     }
-
-    //============================ ORDERS ============================
 
     function defaultAsk() internal view returns (GladiusOrder memory) {
         return customAsk(inputAmount, outputAmount);
@@ -695,7 +693,7 @@ contract GladiusReactorTest is
         });
     }
 
-    //============================ HELEPRS ============================
+    //-------------------------- HELPERS --------------------------
 
     /// @dev Mint tokens for both swappers, and approve amounts to 'permit2'.
     function mintAndApproveTwoSides(uint256 amt0, uint256 amt1) internal {
