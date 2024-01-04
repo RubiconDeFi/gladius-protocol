@@ -19,8 +19,6 @@ import {DeployPermit2} from "../util/DeployPermit2.sol";
 import {MockERC20} from "../util/mock/MockERC20.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {console} from "forge-std/console.sol";
-
 contract GladiusReactorTest is
     PermitSignature,
     DeployPermit2,
@@ -115,7 +113,7 @@ contract GladiusReactorTest is
 
     //-------------------------- MATCHING TESTS --------------------------
 
-    /// @dev Match resting bid with aggresive ask, that crosses the spread.
+    /// @dev Match resting bid with aggressive ask, that crosses the spread.
     ///            ------------------------------
     ///           |         X/Y pair             |
     ///            ------------------------------
@@ -123,7 +121,7 @@ contract GladiusReactorTest is
     ///           |                              |                         |
     ///  ask:$1.5 | (X/Y (sell 1000) (buy 1500)) | <-- lower than bid => *match* them
     ///            ------------------------------
-    function test_AskCrossesTheSpread() public {
+    function test_AskCrossesSpread() public {
         GladiusOrder memory ask = customAsk(1_000e18, 1_500e18);
         GladiusOrder memory bid = defaultBid();
 
@@ -150,13 +148,13 @@ contract GladiusReactorTest is
         ///      because that's the max. we can sell.
         quantities[1] = bid.input.endAmount;
 
-        console.log("swapper(in)  0 =", tokenIn.balanceOf(swapper));
-        console.log("swapper(out) 0 =", tokenOut.balanceOf(swapper));
-
-        console.log("swapper2(in)0 =", tokenOut.balanceOf(swapper2));	
-        console.log("swapper2(out) 0 =", tokenIn.balanceOf(swapper2));
-
         fillContract.executeBatch(orders, quantities);
+
+        /// @dev Amount that goes to 'filler' to cover gas expenses.
+        ///      (p0 - p1) * size_of_smaller_order
+        uint256 expensesCoverage = ((((quantities[0] * 1e18) / quantities[1]) -
+            (ask.input.endAmount / ask.outputs[0].endAmount)) * quantities[0]) /
+            1e18;
 
         /// @dev After execution, bid was fully filled, while ask's
         ///      execution was similar to how IOC orders behave -
@@ -167,18 +165,12 @@ contract GladiusReactorTest is
         ///   ------------------------------
         ///  | (Y/X (sell 0)   (buy 0))     | <- fully filled
         ///  |                              |
-        ///  | (X/Y (sell 900) (buy 1300))  | <- partially filled & cancelled.
+        ///  | (X/Y (sell 900) (buy 1350))  | <- partially filled & cancelled.
         ///   ------------------------------
         //-------------------- SWAPPER (ASK) ASSERTIONS
 
-        console.log("swapper(in)  1 =", tokenIn.balanceOf(swapper));
-        console.log("swapper(out) 1 =", tokenOut.balanceOf(swapper));
-
-        console.log("swapper2(in)1 =", tokenOut.balanceOf(swapper2));
-        console.log("swapper2(out) 1 =", tokenIn.balanceOf(swapper2));
-
         /// @dev 'swapper' has the remaining input amount on his balance.
-        /*assertEq(tokenIn.balanceOf(swapper), 900e18);
+        assertEq(tokenIn.balanceOf(swapper), 900e18);
         /// @dev 'swapper' spent input amount, that equals to
         ///      the bid's output.
         assertEq(
@@ -186,11 +178,29 @@ contract GladiusReactorTest is
             quantities[0]
         );
         /// @dev 'swapper' received an amount of output tokens,
-        ///      that equals to a an input amount in the bid.
+        ///      that equals to (quantity[0] - expensesCoverage)
         assertEq(
             (tokenOut.balanceOf(swapper) - swapperBalanceOUT_0),
-            quantities[1]
-        );*/
+            quantities[1] - expensesCoverage
+        );
+
+        //-------------------- SWAPPER2 (BID) ASSERTIONS
+
+        /// @dev 'swapper2' spent his whole balance.
+        assertEq(tokenOut.balanceOf(swapper2), 0);
+        /// @dev 'swapper2' spent the exact input amount of his order.
+        assertEq(
+            swapper2BalanceOUT_0 - tokenOut.balanceOf(swapper2),
+            bid.input.endAmount
+        );
+        /// @dev 50 'Y' tokens goes straight to the 'filler'.
+        assertEq(tokenOut.balanceOf(address(fillContract)), expensesCoverage);
+        /// @dev 'swapper2' received the exact amount of input tokens,
+        ///      that was requested in his bid.
+        assertEq(
+            tokenIn.balanceOf(swapper2) - swapper2BalanceIN_0,
+            bid.outputs[0].endAmount
+        );
     }
 
     /// @dev Partially fill 1 resting order (X/Y), with 2 aggressive ones (Y/X):
@@ -381,6 +391,91 @@ contract GladiusReactorTest is
         );
     }
 
+    /// @dev Fuzz version of 'test_AskCrossesSpread'.
+    ///      * We have 1 aggressive order (a) and 1 resting order (r)
+    ///        as an input (their params).
+    ///      * Aggressive order is "ask", while resting is "bid".
+    ///          ------------------------
+    ///         |         X/Y pair       |
+    ///          ------------------------
+    ///  bid:$n | (Y/X (sell a) (buy b)) | ------------------------
+    ///         |                        |                         |
+    ///  ask:$k | (X/Y (sell c) (buy d)) | <-- lower than bid => *match* them
+    ///          ------------------------
+    function testFuzz_OrderCrossesSpread(
+        uint256 aggrInput,
+        uint256 aggrOutput,
+        uint256 restInput,
+        uint256 restOutput
+    ) public {
+        /// @dev Set in/out amounts boundaries.
+        restOutput = bound(restOutput, 1e5, type(uint120).max);
+        restInput = bound(restInput, restOutput + 1, type(uint128).max);
+
+        // In order to match (a) with (r), price(r) > price(a),
+        // It won't be equal, since we need to keep some amount
+        // to cover ~potential gas expenses.
+        // So, we bound (a)o to be equal to (r)i
+        // and (a)i to be greater than (r)i
+        // so price(r) > price(a)
+        aggrOutput = restInput;
+        aggrInput = bound(aggrInput, aggrOutput + 1, type(uint136).max);
+
+        assertGt(
+            restInput.divWadUp(restOutput),
+            aggrOutput.divWadUp(aggrInput)
+        );
+        GladiusOrder memory ask = customAsk(aggrInput, aggrOutput);
+        GladiusOrder memory bid = customBid(restInput, restOutput);
+
+        mintAndApproveTwoSides(aggrInput, restInput);
+        (
+            uint256 swapperBalanceIN_0,
+            uint256 swapperBalanceOUT_0
+        ) = saveBalances(address(swapper));
+        (
+            uint256 swapper2BalanceIN_0,
+            uint256 swapper2BalanceOUT_0
+        ) = saveBalances(address(swapper2));
+
+        // Generate orders.
+        SignedOrder[] memory orders = new SignedOrder[](2);
+        orders[0] = generateSignedOrder(ask);
+        orders[1] = generateSignedOrderWithPk(bid, swapper2Pk);
+
+        uint256[] memory quantities = new uint256[](orders.length);
+        /// @dev 'quantity' to take from aggressive ask.
+        quantities[0] = min(ask.input.endAmount, bid.outputs[0].endAmount);
+        quantities[1] = min(bid.input.endAmount, ask.outputs[0].endAmount);
+
+        fillContract.executeBatch(orders, quantities);
+
+        /// @dev Assume that updated balance of 'fillContract' is what covers expenses.
+        uint256 expensesCoverage = tokenOut.balanceOf(address(fillContract));
+
+        //-------------------- SWAPPER (ASK) ASSERTIONS
+
+        assertEq(
+            (swapperBalanceIN_0 - tokenIn.balanceOf(swapper)),
+            quantities[0]
+        );
+        assertEq(
+            (tokenOut.balanceOf(swapper) - swapperBalanceOUT_0),
+            quantities[1] - expensesCoverage
+        );
+
+        //-------------------- SWAPPER2 (BID) ASSERTIONS
+
+        assertEq(
+            swapper2BalanceOUT_0 - tokenOut.balanceOf(swapper2),
+            quantities[1]
+        );
+        assertEq(
+            tokenIn.balanceOf(swapper2) - swapper2BalanceIN_0,
+            quantities[0]
+        );
+    }
+
     //-------------------------- PARTIAL FILL TESTS --------------------------
 
     /// @dev Partially fill 1 order.
@@ -499,28 +594,14 @@ contract GladiusReactorTest is
             address(fillContract)
         );
 
-        /// @dev Partially fill the default order:
-        ///       ---------                       ---------
-        ///      | sell    |                     |         |
-        ///      | 100     |                     |~~~~~~~~~|
-        ///      |         |                     | sold    | <- buy 90 out of 100
-        ///      |         |                     | 90      |
-        ///      |=========| ---PARTIAL FILL---> |=========|
-        ///      | buy     |                     |         |
-        ///      | 200     |                     |~~~~~~~~~|
-        ///      |         |                     | bought  | <- thus, amount to spend
-        ///      |         |                     | 180     |    for filler is 180
-        ///       ---------                       ---------
         fillContract.execute(generateSignedOrder(order), quant);
 
         //-------------------- SWAPPER ASSERTIONS
 
-        /// @dev 'swapper' spent only 90 input tokens.
         assertEq(
             (swapperBalanceIN_0 - tokenIn.balanceOf(swapper)),
             inPf.amount
         );
-        /// @dev 'swapper' bought only 180 output tokens.
         assertEq(
             (tokenOut.balanceOf(swapper) - swapperBalanceOUT_0),
             outPf[0].amount
@@ -528,12 +609,10 @@ contract GladiusReactorTest is
 
         //-------------------- FILLER ASSERTIONS
 
-        /// @dev 'filler' bought 90 input tokens
         assertEq(
             (tokenIn.balanceOf(address(fillContract)) - fillerBalanceIN_0),
             inPf.amount
         );
-        /// @dev 'filler' spent 180 output tokens
         assertEq(
             (fillerBalanceOUT_0 - tokenOut.balanceOf(address(fillContract))),
             outPf[0].amount
@@ -643,7 +722,6 @@ contract GladiusReactorTest is
         GladiusOrder memory order,
         uint256 quant
     ) internal returns (InputToken memory, OutputToken[] memory) {
-        console.log(order.fillThreshold);
 
         /// @dev Apply decay function.
         InputToken memory input = order.input.decay(
@@ -667,5 +745,10 @@ contract GladiusReactorTest is
         assertEq(initialExchangeRate, newExchangeRate);
 
         return (inPf, outPf);
+    }
+
+    function min(uint256 x, uint256 y) internal pure returns (uint256 z) {
+        // in case of equality return the 1st number.
+        z = x <= y ? x : y;
     }
 }
