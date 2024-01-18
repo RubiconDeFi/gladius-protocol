@@ -81,9 +81,9 @@ abstract contract BaseGladiusReactor is
         SignedOrder[] calldata orders,
         uint256[] calldata quantities
     ) external payable override nonReentrant {
-        uint256 ordersLength = orders.length;	
-	if (quantities.length != ordersLength) revert LengthMismatch();
-	    
+        uint256 ordersLength = orders.length;
+        if (quantities.length != ordersLength) revert LengthMismatch();
+
         ResolvedOrder[] memory resolvedOrders = new ResolvedOrder[](
             ordersLength
         );
@@ -105,8 +105,8 @@ abstract contract BaseGladiusReactor is
         bytes calldata callbackData
     ) external payable override nonReentrant {
         uint256 ordersLength = orders.length;
-	if (quantities.length != ordersLength) revert LengthMismatch();
-	
+        if (quantities.length != ordersLength) revert LengthMismatch();
+
         ResolvedOrder[] memory resolvedOrders = new ResolvedOrder[](
             ordersLength
         );
@@ -149,6 +149,7 @@ abstract contract BaseGladiusReactor is
             for (uint256 i = 0; i < ordersLength; i++) {
                 ResolvedOrder memory resolvedOrder = orders[i];
                 uint256 outputsLength = resolvedOrder.outputs.length;
+
                 for (uint256 j = 0; j < outputsLength; j++) {
                     OutputToken memory output = resolvedOrder.outputs[j];
                     output.token.transferFill(output.recipient, output.amount);

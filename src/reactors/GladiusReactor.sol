@@ -96,7 +96,6 @@ contract GladiusReactor is BaseGladiusReactor {
     /// - deadline must be greater than or equal than decayEndTime
     /// - decayEndTime must be greater than or equal to decayStartTime
     /// - if there's input decay, outputs must not decay
-    /// - for input decay, startAmount must < endAmount
     /// @dev Reverts if the order is invalid
     function _validateOrder(GladiusOrder memory order) internal pure {
         if (order.outputs.length != 1) revert InvalidOutLength();
