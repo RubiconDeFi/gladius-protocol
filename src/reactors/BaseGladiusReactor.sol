@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.19;
 
 import {SignedOrder, ResolvedOrder, OutputToken} from "../base/ReactorStructs.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/security/ReentrancyGuard.sol";
@@ -8,6 +8,7 @@ import {IReactorCallback} from "../interfaces/IReactorCallback.sol";
 import {IGladiusReactor} from "../interfaces/IGladiusReactor.sol";
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 import {ResolvedOrderLib} from "../lib/ResolvedOrderLib.sol";
+import {ProxyConstructor} from "../lib/ProxyConstructor.sol";
 import {CurrencyLibrary} from "../lib/CurrencyLibrary.sol";
 import {ReactorEvents} from "../base/ReactorEvents.sol";
 import {ProtocolFees} from "../base/ProtocolFees.sol";
@@ -19,29 +20,26 @@ abstract contract BaseGladiusReactor is
     IGladiusReactor,
     ReactorEvents,
     ProtocolFees,
-    ReentrancyGuard
+    ReentrancyGuard,
+    ProxyConstructor
 {
     using SafeTransferLib for ERC20;
     using ResolvedOrderLib for ResolvedOrder;
     using CurrencyLibrary for address;
 
-    bool public initialized;
-
     /// @notice Thrown when an output = ETH and the reactor does contain enough ETH,
     ///         but the direct filler did not include enough ETH in their
     ///         call to 'execute'/'executeBatch'
     error InsufficientEth();
-    /// @notice For constructor-like 'initialize' function.
-    error AlreadyInitialized();
     /// @notice Thrown if length of quantites and orders for batch execute isn't the same.
     error LengthMismatch();
 
     /// @notice permit2 address used for token transfers and signature verification
     IPermit2 public permit2;
 
-    function initialize(IPermit2 _permit2, address _owner) public {
+    function initialize(address _permit2, address _owner) external override {
         if (initialized) revert AlreadyInitialized();
-        permit2 = _permit2;
+        permit2 = IPermit2(_permit2);
         owner = _owner;
 
         initialized = true;
