@@ -58,7 +58,7 @@ contract GladiusReactorTest is
 
     function createReactor() public override returns (BaseGladiusReactor) {
         BaseGladiusReactor r = new GladiusReactor();
-        r.initialize(permit2, PROTOCOL_FEE_OWNER);
+        r.initialize(address(permit2), PROTOCOL_FEE_OWNER);
 
         return r;
     }
@@ -612,8 +612,8 @@ contract GladiusReactorTest is
         assertEq(
             (tokenIn.balanceOf(address(fillContract)) - fillerBalanceIN_0),
             inPf.amount
-        assertEq(
         );
+        assertEq(
             (fillerBalanceOUT_0 - tokenOut.balanceOf(address(fillContract))),
             outPf[0].amount
         );

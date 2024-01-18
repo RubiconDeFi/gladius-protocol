@@ -34,7 +34,7 @@ contract DeployGladiusReactor is Script, DeployPermit2, DeployProxy {
         address payable proxy = deployProxy(address(reactor), "");
         console2.log("Proxy for 'GladiusReactor':", proxy);
 
-        GladiusReactor(proxy).initialize(PERMIT2, RUBICON_ETH);
+        GladiusReactor(proxy).initialize(address(PERMIT2), RUBICON_ETH);
         console2.log("Proxy is initialized");
 
         GladiusOrderQuoter quoter = new GladiusOrderQuoter{salt: bytes32(uint256(2))}();
