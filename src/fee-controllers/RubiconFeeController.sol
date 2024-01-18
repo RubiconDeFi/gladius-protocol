@@ -12,9 +12,13 @@ import {DSAuth} from "../lib/DSAuth.sol";
 ///      * By default applies constant 'BASE_FEE' on output token.
 ///      * Dynamic pair-based fee can be enabled by calling 'setPairBasedFee'.
 ///      * Both dynamic and base fee can be disabled by setting 'applyFee' to false.
-contract RubiconFeeController is IProtocolFeeController, DSAuth, ProxyConstructor {
+contract RubiconFeeController is
+    IProtocolFeeController,
+    DSAuth,
+    ProxyConstructor
+{
     using FixedPointMathLib for uint256;
-    
+
     uint256 private constant DENOM = 100_000;
     uint256 public constant BASE_FEE = 10;
     address public feeRecipient;
@@ -27,7 +31,10 @@ contract RubiconFeeController is IProtocolFeeController, DSAuth, ProxyConstructo
     /// @dev pair hash => pair-based fee
     mapping(bytes32 => PairBasedFee) public fees;
 
-    function initialize(address _owner, address _feeRecipient) external override {
+    function initialize(
+        address _owner,
+        address _feeRecipient
+    ) external override {
         if (initialized) revert AlreadyInitialized();
         owner = _owner;
         feeRecipient = _feeRecipient;
@@ -51,18 +58,20 @@ contract RubiconFeeController is IProtocolFeeController, DSAuth, ProxyConstructo
     function getFeeOutputs(
         ResolvedOrder memory order
     ) external view override returns (OutputToken[] memory result) {
-	/// @notice Right now the length is enforced by
-	///         'GladiusReactor' to be equal to 1.
+        /// @notice Right now the length is enforced by
+        ///         'GladiusReactor' to be equal to 1.
         result = new OutputToken[](order.outputs.length);
 
         address tokenIn = address(order.input.token);
         uint256 feeCount;
 
         for (uint256 i = 0; i < order.outputs.length; ++i) {
-	    /// @dev Wee will be in its form.
+            /// @dev Wee will be in its form.
             address tokenOut = order.outputs[i].token;
 
-            PairBasedFee memory fee = fees[getPairHash(address(tokenIn), tokenOut)];
+            PairBasedFee memory fee = fees[
+                getPairHash(address(tokenIn), tokenOut)
+            ];
 
             uint256 feeAmount = fee.applyFee
                 ? order.outputs[i].amount.mulDivUp(fee.fee, DENOM)

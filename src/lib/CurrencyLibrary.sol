@@ -20,7 +20,10 @@ library CurrencyLibrary {
     /// @param currency The currency to get the balance of
     /// @param addr The address to get the balance of
     /// @return balance The balance of the currency for addr
-    function balanceOf(address currency, address addr) internal view returns (uint256 balance) {
+    function balanceOf(
+        address currency,
+        address addr
+    ) internal view returns (uint256 balance) {
         if (isNative(currency)) {
             balance = addr.balance;
         } else {
@@ -33,7 +36,11 @@ library CurrencyLibrary {
     /// @param currency The currency to transfer
     /// @param recipient The recipient of the currency
     /// @param amount The amount of currency to transfer
-    function transferFill(address currency, address recipient, uint256 amount) internal {
+    function transferFill(
+        address currency,
+        address recipient,
+        uint256 amount
+    ) internal {
         if (isNative(currency)) {
             // we will have received native assets directly so can directly transfer
             transferNative(recipient, amount);
@@ -47,7 +54,7 @@ library CurrencyLibrary {
     /// @param recipient The recipient of the currency
     /// @param amount The amount of currency to transfer
     function transferNative(address recipient, uint256 amount) internal {
-        (bool success,) = recipient.call{value: amount}("");
+        (bool success, ) = recipient.call{value: amount}("");
         if (!success) revert NativeTransferFailed();
     }
 
