@@ -66,7 +66,7 @@ contract RubiconFeeController is
         uint256 feeCount;
 
         for (uint256 i = 0; i < order.outputs.length; ++i) {
-            /// @dev Wee will be in its form.
+            /// @dev Fee will be in the 'tokenOut' form.
             address tokenOut = order.outputs[i].token;
 
             PairBasedFee memory fee = fees[
