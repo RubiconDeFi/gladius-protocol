@@ -2,9 +2,10 @@
 pragma solidity ^0.8.19;
 
 import {SignedOrder} from "../base/ReactorStructs.sol";
+import {IReactor} from "./IReactor.sol";
 
 /// @notice Interface for 'GladiusReactor'.
-interface IGladiusReactor {
+interface IGladiusReactor is IReactor {
     /// @notice Execute part of a single order, specified in 'quantity'.
     /// @param order The order definition and valid signature to execute.
     /// @param quantity An amount, in the form of input token, to take from the order.

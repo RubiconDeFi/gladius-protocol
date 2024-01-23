@@ -45,6 +45,10 @@ abstract contract BaseGladiusReactor is
         initialized = true;
     }
 
+    receive() external payable {}    
+
+    //-------------------------- GLADIUS REACTOR FNS --------------------------
+
     /// @inheritdoc IGladiusReactor
     function execute(
         SignedOrder calldata order,
@@ -123,6 +127,82 @@ abstract contract BaseGladiusReactor is
         _fill(resolvedOrders);
     }
 
+    //-------------------------- REACTOR FNS --------------------------
+
+    /// @dev See IReactor
+    function execute(
+        SignedOrder calldata order
+    ) external payable override nonReentrant {
+        ResolvedOrder[] memory resolvedOrders = new ResolvedOrder[](1);
+        resolvedOrders[0] = resolve(order);
+
+        _prepare(resolvedOrders);
+        _fill(resolvedOrders);
+    }
+
+    /// @dev See IReactor
+    function executeWithCallback(
+        SignedOrder calldata order,
+        bytes calldata callbackData
+    ) external payable override nonReentrant {
+        ResolvedOrder[] memory resolvedOrders = new ResolvedOrder[](1);
+        resolvedOrders[0] = resolve(order);
+
+        _prepare(resolvedOrders);
+        IReactorCallback(msg.sender).reactorCallback(
+            resolvedOrders,
+            callbackData
+        );
+        _fill(resolvedOrders);
+    }
+
+    /// @dev See IReactor
+    function executeBatch(
+        SignedOrder[] calldata orders
+    ) external payable override nonReentrant {
+        uint256 ordersLength = orders.length;
+
+        ResolvedOrder[] memory resolvedOrders = new ResolvedOrder[](
+            ordersLength
+        );
+
+        unchecked {
+            for (uint256 i = 0; i < ordersLength; i++) {
+                resolvedOrders[i] = resolve(orders[i]);
+            }
+        }
+
+        _prepare(resolvedOrders);
+        _fill(resolvedOrders);
+    }
+
+    /// @dev See IReactor
+    function executeBatchWithCallback(
+        SignedOrder[] calldata orders,
+        bytes calldata callbackData
+    ) external payable override nonReentrant {
+        uint256 ordersLength = orders.length;
+
+        ResolvedOrder[] memory resolvedOrders = new ResolvedOrder[](
+            ordersLength
+        );
+
+        unchecked {
+            for (uint256 i = 0; i < ordersLength; i++) {
+                resolvedOrders[i] = resolve(orders[i]);
+            }
+        }
+
+        _prepare(resolvedOrders);
+        IReactorCallback(msg.sender).reactorCallback(
+            resolvedOrders,
+            callbackData
+        );
+        _fill(resolvedOrders);
+    }
+
+    //-------------------------- INTERNALS --------------------------
+
     /// @notice validates, injects fees, and transfers input tokens in preparation for order fill
     /// @param orders The orders to prepare
     function _prepare(ResolvedOrder[] memory orders) internal {
@@ -170,10 +250,6 @@ abstract contract BaseGladiusReactor is
         }
     }
 
-    receive() external payable {
-        // receive native asset to support native output
-    }
-
     /// @notice Resolve order-type specific requirements into a generic order with the final inputs and outputs.
     /// @param order The encoded order to resolve
     /// @return resolvedOrder generic resolved order of inputs and outputs
@@ -181,6 +257,11 @@ abstract contract BaseGladiusReactor is
     function resolve(
         SignedOrder calldata order,
         uint256 quantity
+    ) internal view virtual returns (ResolvedOrder memory resolvedOrder);
+
+    /// @notice Resolve 'GladiusOrder' without partial fill.
+    function resolve(
+        SignedOrder calldata order
     ) internal view virtual returns (ResolvedOrder memory resolvedOrder);
 
     /// @notice Transfers tokens to the fillContract
