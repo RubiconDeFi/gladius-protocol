@@ -34,7 +34,7 @@ contract DeployDutch is Script, DeployPermit2, DeployProxy {
 
         address payable proxy = deployProxy(address(reactor), "");
         console.log("Proxy for 'DutchOrderReactor':", proxy);
-        DutchOrderReactor(proxy).initialize(PERMIT2, RUBICON_ETH);
+        DutchOrderReactor(proxy).initialize(address(PERMIT2), RUBICON_ETH);
         console.log("Proxy is initialized");
 
         OrderQuoter quoter = new OrderQuoter();

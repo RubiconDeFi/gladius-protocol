@@ -60,7 +60,7 @@ contract SwapRouter02ExecutorTest is Test, PermitSignature, GasSnapshot, DeployP
         mockSwapRouter = new MockSwapRouter(address(weth));
         permit2 = IPermit2(deployPermit2());
         reactor = new DutchOrderReactor();
-	reactor.initialize(permit2, PROTOCOL_FEE_OWNER);
+	reactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
         swapRouter02Executor =
             new SwapRouter02Executor(address(this), reactor, address(this), ISwapRouter02(address(mockSwapRouter)));
 

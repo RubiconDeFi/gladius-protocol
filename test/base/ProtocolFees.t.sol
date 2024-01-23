@@ -443,7 +443,7 @@ contract ProtocolFeesGasComparisonTest is Test, PermitSignature, DeployPermit2, 
         feeController = new MockFeeController(PROTOCOL_FEE_RECIPIENT);
         permit2 = IPermit2(deployPermit2());
         reactor = new ExclusiveDutchOrderReactor();
-	reactor.initialize(permit2, PROTOCOL_FEE_OWNER);
+	reactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
         fillContract = new MockFillContract(address(reactor));
         vm.prank(PROTOCOL_FEE_OWNER);
         reactor.setProtocolFeeController(address(feeController));

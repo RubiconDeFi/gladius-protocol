@@ -6,7 +6,7 @@ import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 
 contract MockDutchOrderReactor is DutchOrderReactor {
     constructor(IPermit2 _permit2, address _protocolFeeOwner) {
-        initialize(_permit2, _protocolFeeOwner);
+        initialize(address(_permit2), _protocolFeeOwner);
     }
 
     function resolveOrder(
