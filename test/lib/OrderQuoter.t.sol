@@ -20,7 +20,12 @@ import {OrderInfoBuilder} from "../util/OrderInfoBuilder.sol";
 import {OutputsBuilder} from "../util/OutputsBuilder.sol";
 import {PermitSignature} from "../util/PermitSignature.sol";
 
-contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 {
+contract OrderQuoterTest is
+    Test,
+    PermitSignature,
+    ReactorEvents,
+    DeployPermit2
+{
     using OrderInfoBuilder for OrderInfo;
 
     uint256 constant ONE = 10 ** 18;
@@ -43,18 +48,32 @@ contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 
         swapper = vm.addr(swapperPrivateKey);
         tokenIn.mint(address(swapper), ONE);
         permit2 = IPermit2(deployPermit2());
-        limitOrderReactor = new LimitOrderReactor(permit2, PROTOCOL_FEE_OWNER);
-        dutchOrderReactor = new DutchOrderReactor(permit2, PROTOCOL_FEE_OWNER);
+
+        limitOrderReactor = new LimitOrderReactor();
+        limitOrderReactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
+
+        dutchOrderReactor = new DutchOrderReactor();
+        dutchOrderReactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
     }
 
     function testQuoteLimitOrder() public {
         tokenIn.forceApprove(swapper, address(permit2), ONE);
         LimitOrder memory order = LimitOrder({
-            info: OrderInfoBuilder.init(address(limitOrderReactor)).withSwapper(address(swapper)),
+            info: OrderInfoBuilder.init(address(limitOrderReactor)).withSwapper(
+                address(swapper)
+            ),
             input: InputToken(tokenIn, ONE, ONE),
-            outputs: OutputsBuilder.single(address(tokenOut), ONE, address(swapper))
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                ONE,
+                address(swapper)
+            )
         });
-        bytes memory sig = signOrder(swapperPrivateKey, address(permit2), order);
+        bytes memory sig = signOrder(
+            swapperPrivateKey,
+            address(permit2),
+            order
+        );
         ResolvedOrder memory quote = quoter.quote(abi.encode(order), sig);
         assertEq(address(quote.input.token), address(tokenIn));
         assertEq(quote.input.amount, ONE);
@@ -65,15 +84,26 @@ contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 
     function testQuoteDutchOrder() public {
         tokenIn.forceApprove(swapper, address(permit2), ONE);
         DutchOutput[] memory dutchOutputs = new DutchOutput[](1);
-        dutchOutputs[0] = DutchOutput(address(tokenOut), ONE, ONE * 9 / 10, address(0));
+        dutchOutputs[0] = DutchOutput(
+            address(tokenOut),
+            ONE,
+            (ONE * 9) / 10,
+            address(0)
+        );
         DutchOrder memory order = DutchOrder({
-            info: OrderInfoBuilder.init(address(dutchOrderReactor)).withSwapper(address(swapper)),
+            info: OrderInfoBuilder.init(address(dutchOrderReactor)).withSwapper(
+                address(swapper)
+            ),
             decayStartTime: block.timestamp,
             decayEndTime: block.timestamp + 100,
             input: DutchInput(tokenIn, ONE, ONE),
             outputs: dutchOutputs
         });
-        bytes memory sig = signOrder(swapperPrivateKey, address(permit2), order);
+        bytes memory sig = signOrder(
+            swapperPrivateKey,
+            address(permit2),
+            order
+        );
         ResolvedOrder memory quote = quoter.quote(abi.encode(order), sig);
 
         assertEq(address(quote.input.token), address(tokenIn));
@@ -86,21 +116,32 @@ contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 
         vm.warp(block.timestamp + 100);
         tokenIn.forceApprove(swapper, address(permit2), ONE);
         DutchOutput[] memory dutchOutputs = new DutchOutput[](1);
-        dutchOutputs[0] = DutchOutput(address(tokenOut), ONE, ONE * 9 / 10, address(0));
+        dutchOutputs[0] = DutchOutput(
+            address(tokenOut),
+            ONE,
+            (ONE * 9) / 10,
+            address(0)
+        );
         DutchOrder memory order = DutchOrder({
-            info: OrderInfoBuilder.init(address(dutchOrderReactor)).withSwapper(address(swapper)),
+            info: OrderInfoBuilder.init(address(dutchOrderReactor)).withSwapper(
+                address(swapper)
+            ),
             decayStartTime: block.timestamp - 100,
             decayEndTime: 201,
             input: DutchInput(tokenIn, ONE, ONE),
             outputs: dutchOutputs
         });
-        bytes memory sig = signOrder(swapperPrivateKey, address(permit2), order);
+        bytes memory sig = signOrder(
+            swapperPrivateKey,
+            address(permit2),
+            order
+        );
         ResolvedOrder memory quote = quoter.quote(abi.encode(order), sig);
 
         assertEq(address(quote.input.token), address(tokenIn));
         assertEq(quote.input.amount, ONE);
         assertEq(quote.outputs[0].token, address(tokenOut));
-        assertEq(quote.outputs[0].amount, ONE * 95 / 100);
+        assertEq(quote.outputs[0].amount, (ONE * 95) / 100);
     }
 
     function testQuoteDutchOrderAfterInputDecay() public {
@@ -109,17 +150,23 @@ contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 
         DutchOutput[] memory dutchOutputs = new DutchOutput[](1);
         dutchOutputs[0] = DutchOutput(address(tokenOut), ONE, ONE, address(0));
         DutchOrder memory order = DutchOrder({
-            info: OrderInfoBuilder.init(address(dutchOrderReactor)).withSwapper(address(swapper)),
+            info: OrderInfoBuilder.init(address(dutchOrderReactor)).withSwapper(
+                address(swapper)
+            ),
             decayStartTime: block.timestamp - 100,
             decayEndTime: 201,
-            input: DutchInput(tokenIn, ONE * 9 / 10, ONE),
+            input: DutchInput(tokenIn, (ONE * 9) / 10, ONE),
             outputs: dutchOutputs
         });
-        bytes memory sig = signOrder(swapperPrivateKey, address(permit2), order);
+        bytes memory sig = signOrder(
+            swapperPrivateKey,
+            address(permit2),
+            order
+        );
         ResolvedOrder memory quote = quoter.quote(abi.encode(order), sig);
 
         assertEq(address(quote.input.token), address(tokenIn));
-        assertEq(quote.input.amount, ONE * 95 / 100);
+        assertEq(quote.input.amount, (ONE * 95) / 100);
         assertEq(quote.outputs[0].token, address(tokenOut));
         assertEq(quote.outputs[0].amount, ONE);
     }
@@ -129,13 +176,22 @@ contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 
         vm.warp(timestamp + 100);
         tokenIn.forceApprove(swapper, address(permit2), ONE);
         LimitOrder memory order = LimitOrder({
-            info: OrderInfoBuilder.init(address(limitOrderReactor)).withSwapper(address(swapper)).withDeadline(
-                block.timestamp - 1
-                ),
+            info: OrderInfoBuilder
+                .init(address(limitOrderReactor))
+                .withSwapper(address(swapper))
+                .withDeadline(block.timestamp - 1),
             input: InputToken(tokenIn, ONE, ONE),
-            outputs: OutputsBuilder.single(address(tokenOut), ONE, address(swapper))
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                ONE,
+                address(swapper)
+            )
         });
-        bytes memory sig = signOrder(swapperPrivateKey, address(permit2), order);
+        bytes memory sig = signOrder(
+            swapperPrivateKey,
+            address(permit2),
+            order
+        );
         vm.expectRevert(ResolvedOrderLib.DeadlinePassed.selector);
         quoter.quote(abi.encode(order), sig);
     }
@@ -143,11 +199,21 @@ contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 
     function testQuoteLimitOrderInsufficientBalance() public {
         tokenIn.forceApprove(swapper, address(permit2), ONE);
         LimitOrder memory order = LimitOrder({
-            info: OrderInfoBuilder.init(address(limitOrderReactor)).withSwapper(address(swapper)),
+            info: OrderInfoBuilder.init(address(limitOrderReactor)).withSwapper(
+                address(swapper)
+            ),
             input: InputToken(tokenIn, ONE * 2, ONE * 2),
-            outputs: OutputsBuilder.single(address(tokenOut), ONE, address(swapper))
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                ONE,
+                address(swapper)
+            )
         });
-        bytes memory sig = signOrder(swapperPrivateKey, address(permit2), order);
+        bytes memory sig = signOrder(
+            swapperPrivateKey,
+            address(permit2),
+            order
+        );
         vm.expectRevert("TRANSFER_FROM_FAILED");
         quoter.quote(abi.encode(order), sig);
     }
@@ -155,15 +221,26 @@ contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 
     function testQuoteDutchOrderEndBeforeStart() public {
         tokenIn.forceApprove(swapper, address(permit2), ONE);
         DutchOutput[] memory dutchOutputs = new DutchOutput[](1);
-        dutchOutputs[0] = DutchOutput(address(tokenOut), ONE, ONE * 9 / 10, address(0));
+        dutchOutputs[0] = DutchOutput(
+            address(tokenOut),
+            ONE,
+            (ONE * 9) / 10,
+            address(0)
+        );
         DutchOrder memory order = DutchOrder({
-            info: OrderInfoBuilder.init(address(dutchOrderReactor)).withSwapper(address(swapper)),
+            info: OrderInfoBuilder.init(address(dutchOrderReactor)).withSwapper(
+                address(swapper)
+            ),
             decayStartTime: block.timestamp + 1000,
             decayEndTime: block.timestamp + 100,
             input: DutchInput(tokenIn, ONE, ONE),
             outputs: dutchOutputs
         });
-        bytes memory sig = signOrder(swapperPrivateKey, address(permit2), order);
+        bytes memory sig = signOrder(
+            swapperPrivateKey,
+            address(permit2),
+            order
+        );
         vm.expectRevert(DutchDecayLib.EndTimeBeforeStartTime.selector);
         quoter.quote(abi.encode(order), sig);
     }
@@ -172,7 +249,11 @@ contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 
         LimitOrder memory order = LimitOrder({
             info: OrderInfoBuilder.init(address(0x1234)),
             input: InputToken(tokenIn, ONE, ONE),
-            outputs: OutputsBuilder.single(address(tokenOut), ONE, address(swapper))
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                ONE,
+                address(swapper)
+            )
         });
         IReactor reactor = quoter.getReactor(abi.encode(order));
         assertEq(address(reactor), address(0x1234));
@@ -180,7 +261,12 @@ contract OrderQuoterTest is Test, PermitSignature, ReactorEvents, DeployPermit2 
 
     function testGetReactorDutchOrder() public {
         DutchOutput[] memory dutchOutputs = new DutchOutput[](1);
-        dutchOutputs[0] = DutchOutput(address(tokenOut), ONE, ONE * 9 / 10, address(0));
+        dutchOutputs[0] = DutchOutput(
+            address(tokenOut),
+            ONE,
+            (ONE * 9) / 10,
+            address(0)
+        );
         DutchOrder memory order = DutchOrder({
             info: OrderInfoBuilder.init(address(0x2345)),
             decayStartTime: block.timestamp + 1000,

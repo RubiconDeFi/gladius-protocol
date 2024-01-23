@@ -44,7 +44,8 @@ contract EthOutputMockFillContractTest is Test, DeployPermit2, PermitSignature, 
         swapperPrivateKey2 = 0x12341235;
         swapper2 = vm.addr(swapperPrivateKey2);
         permit2 = IPermit2(deployPermit2());
-        reactor = new DutchOrderReactor(permit2, PROTOCOL_FEE_OWNER);
+        reactor = new DutchOrderReactor();
+	reactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
         fillContract = new MockFillContract(address(reactor));
         tokenIn1.forceApprove(swapper1, address(permit2), type(uint256).max);
         tokenIn1.forceApprove(swapper2, address(permit2), type(uint256).max);
@@ -246,7 +247,8 @@ contract EthOutputDirectFillerTest is Test, PermitSignature, GasSnapshot, Deploy
         swapper2 = vm.addr(swapperPrivateKey2);
         directFiller = address(888);
         permit2 = IPermit2(deployPermit2());
-        reactor = new DutchOrderReactor(permit2, PROTOCOL_FEE_OWNER);
+        reactor = new DutchOrderReactor();
+	reactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
         tokenIn1.forceApprove(swapper1, address(permit2), type(uint256).max);
         tokenIn1.forceApprove(swapper2, address(permit2), type(uint256).max);
         tokenIn2.forceApprove(swapper2, address(permit2), type(uint256).max);

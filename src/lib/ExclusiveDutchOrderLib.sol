@@ -27,52 +27,60 @@ library ExclusiveDutchOrderLib {
     using DutchOrderLib for DutchOutput[];
     using OrderInfoLib for OrderInfo;
 
-    bytes internal constant EXCLUSIVE_DUTCH_LIMIT_ORDER_TYPE = abi.encodePacked(
-        "ExclusiveDutchOrder(",
-        "OrderInfo info,",
-        "uint256 decayStartTime,",
-        "uint256 decayEndTime,",
-        "address exclusiveFiller,",
-        "uint256 exclusivityOverrideBps,",
-        "address inputToken,",
-        "uint256 inputStartAmount,",
-        "uint256 inputEndAmount,",
-        "DutchOutput[] outputs)"
-    );
+    bytes internal constant EXCLUSIVE_DUTCH_LIMIT_ORDER_TYPE =
+        abi.encodePacked(
+            "ExclusiveDutchOrder(",
+            "OrderInfo info,",
+            "uint256 decayStartTime,",
+            "uint256 decayEndTime,",
+            "address exclusiveFiller,",
+            "uint256 exclusivityOverrideBps,",
+            "address inputToken,",
+            "uint256 inputStartAmount,",
+            "uint256 inputEndAmount,",
+            "DutchOutput[] outputs)"
+        );
 
-    bytes internal constant ORDER_TYPE = abi.encodePacked(
-        EXCLUSIVE_DUTCH_LIMIT_ORDER_TYPE, DutchOrderLib.DUTCH_OUTPUT_TYPE, OrderInfoLib.ORDER_INFO_TYPE
-    );
+    bytes internal constant ORDER_TYPE =
+        abi.encodePacked(
+            EXCLUSIVE_DUTCH_LIMIT_ORDER_TYPE,
+            DutchOrderLib.DUTCH_OUTPUT_TYPE,
+            OrderInfoLib.ORDER_INFO_TYPE
+        );
     bytes32 internal constant ORDER_TYPE_HASH = keccak256(ORDER_TYPE);
 
     /// @dev Note that sub-structs have to be defined in alphabetical order in the EIP-712 spec
-    string internal constant PERMIT2_ORDER_TYPE = string(
-        abi.encodePacked(
-            "ExclusiveDutchOrder witness)",
-            DutchOrderLib.DUTCH_OUTPUT_TYPE,
-            EXCLUSIVE_DUTCH_LIMIT_ORDER_TYPE,
-            OrderInfoLib.ORDER_INFO_TYPE,
-            DutchOrderLib.TOKEN_PERMISSIONS_TYPE
-        )
-    );
+    string internal constant PERMIT2_ORDER_TYPE =
+        string(
+            abi.encodePacked(
+                "ExclusiveDutchOrder witness)",
+                DutchOrderLib.DUTCH_OUTPUT_TYPE,
+                EXCLUSIVE_DUTCH_LIMIT_ORDER_TYPE,
+                OrderInfoLib.ORDER_INFO_TYPE,
+                DutchOrderLib.TOKEN_PERMISSIONS_TYPE
+            )
+        );
 
     /// @notice hash the given order
     /// @param order the order to hash
     /// @return the eip-712 order hash
-    function hash(ExclusiveDutchOrder memory order) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                ORDER_TYPE_HASH,
-                order.info.hash(),
-                order.decayStartTime,
-                order.decayEndTime,
-                order.exclusiveFiller,
-                order.exclusivityOverrideBps,
-                order.input.token,
-                order.input.startAmount,
-                order.input.endAmount,
-                order.outputs.hash()
-            )
-        );
+    function hash(
+        ExclusiveDutchOrder memory order
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    ORDER_TYPE_HASH,
+                    order.info.hash(),
+                    order.decayStartTime,
+                    order.decayEndTime,
+                    order.exclusiveFiller,
+                    order.exclusivityOverrideBps,
+                    order.input.token,
+                    order.input.startAmount,
+                    order.input.endAmount,
+                    order.outputs.hash()
+                )
+            );
     }
 }

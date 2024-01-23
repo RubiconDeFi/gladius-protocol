@@ -19,38 +19,49 @@ contract ExclusiveDutchOrderReactor is BaseReactor {
 
     /// @notice thrown when an order's deadline is before its end time
     error DeadlineBeforeEndTime();
-
     /// @notice thrown when an order's end time is before its start time
     error OrderEndTimeBeforeStartTime();
-
     /// @notice thrown when an order's inputs and outputs both decay
     error InputAndOutputDecay();
 
-    constructor(IPermit2 _permit2, address _protocolFeeOwner) BaseReactor(_permit2, _protocolFeeOwner) {}
-
     /// @inheritdoc BaseReactor
-    function resolve(SignedOrder calldata signedOrder)
+    function resolve(
+        SignedOrder calldata signedOrder
+    )
         internal
         view
         virtual
         override
         returns (ResolvedOrder memory resolvedOrder)
     {
-        ExclusiveDutchOrder memory order = abi.decode(signedOrder.order, (ExclusiveDutchOrder));
+        ExclusiveDutchOrder memory order = abi.decode(
+            signedOrder.order,
+            (ExclusiveDutchOrder)
+        );
         _validateOrder(order);
 
         resolvedOrder = ResolvedOrder({
             info: order.info,
             input: order.input.decay(order.decayStartTime, order.decayEndTime),
-            outputs: order.outputs.decay(order.decayStartTime, order.decayEndTime),
+            outputs: order.outputs.decay(
+                order.decayStartTime,
+                order.decayEndTime
+            ),
             sig: signedOrder.sig,
             hash: order.hash()
         });
-        resolvedOrder.handleOverride(order.exclusiveFiller, order.decayStartTime, order.exclusivityOverrideBps);
+        resolvedOrder.handleOverride(
+            order.exclusiveFiller,
+            order.decayStartTime,
+            order.exclusivityOverrideBps
+        );
     }
 
     /// @inheritdoc BaseReactor
-    function transferInputTokens(ResolvedOrder memory order, address to) internal override {
+    function transferInputTokens(
+        ResolvedOrder memory order,
+        address to
+    ) internal override {
         permit2.permitWitnessTransferFrom(
             order.toPermit(),
             order.transferDetails(to),
@@ -65,7 +76,6 @@ contract ExclusiveDutchOrderReactor is BaseReactor {
     /// - deadline must be greater than or equal than decayEndTime
     /// - decayEndTime must be greater than or equal to decayStartTime
     /// - if there's input decay, outputs must not decay
-    /// - for input decay, startAmount must < endAmount
     /// @dev Throws if the order is invalid
     function _validateOrder(ExclusiveDutchOrder memory order) internal pure {
         if (order.info.deadline < order.decayEndTime) {
@@ -79,7 +89,10 @@ contract ExclusiveDutchOrderReactor is BaseReactor {
         if (order.input.startAmount != order.input.endAmount) {
             unchecked {
                 for (uint256 i = 0; i < order.outputs.length; i++) {
-                    if (order.outputs[i].startAmount != order.outputs[i].endAmount) {
+                    if (
+                        order.outputs[i].startAmount !=
+                        order.outputs[i].endAmount
+                    ) {
                         revert InputAndOutputDecay();
                     }
                 }

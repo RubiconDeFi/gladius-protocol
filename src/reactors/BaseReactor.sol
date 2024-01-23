@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
-import {SafeTransferLib} from "solmate/src/utils/SafeTransferLib.sol";
-import {ReentrancyGuard} from "openzeppelin-contracts/security/ReentrancyGuard.sol";
-import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
-import {ERC20} from "solmate/src/tokens/ERC20.sol";
-import {ReactorEvents} from "../base/ReactorEvents.sol";
-import {ResolvedOrderLib} from "../lib/ResolvedOrderLib.sol";
-import {CurrencyLibrary, NATIVE} from "../lib/CurrencyLibrary.sol";
-import {IReactorCallback} from "../interfaces/IReactorCallback.sol";
-import {IReactor} from "../interfaces/IReactor.sol";
-import {ProtocolFees} from "../base/ProtocolFees.sol";
 import {SignedOrder, ResolvedOrder, OutputToken} from "../base/ReactorStructs.sol";
+import {ReentrancyGuard} from "openzeppelin-contracts/security/ReentrancyGuard.sol";
+import {SafeTransferLib} from "solmate/src/utils/SafeTransferLib.sol";
+import {IReactorCallback} from "../interfaces/IReactorCallback.sol";
+import {CurrencyLibrary, NATIVE} from "../lib/CurrencyLibrary.sol";
+import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
+import {ResolvedOrderLib} from "../lib/ResolvedOrderLib.sol";
+import {ProxyConstructor} from "../lib/ProxyConstructor.sol";
+import {ReactorEvents} from "../base/ReactorEvents.sol";
+import {ProtocolFees} from "../base/ProtocolFees.sol";
+import {IReactor} from "../interfaces/IReactor.sol";
+import {ERC20} from "solmate/src/tokens/ERC20.sol";
 
 /// @notice Generic reactor logic for settling off-chain signed orders
 ///     using arbitrary fill methods specified by a filler
@@ -19,7 +20,8 @@ abstract contract BaseReactor is
     IReactor,
     ReactorEvents,
     ProtocolFees,
-    ReentrancyGuard
+    ReentrancyGuard,
+    ProxyConstructor
 {
     using SafeTransferLib for ERC20;
     using ResolvedOrderLib for ResolvedOrder;
@@ -30,13 +32,14 @@ abstract contract BaseReactor is
     error InsufficientEth();
 
     /// @notice permit2 address used for token transfers and signature verification
-    IPermit2 public immutable permit2;
+    IPermit2 public permit2;
 
-    constructor(
-        IPermit2 _permit2,
-        address _protocolFeeOwner
-    ) ProtocolFees(_protocolFeeOwner) {
-        permit2 = _permit2;
+    function initialize(address _permit2, address _owner) public override {
+        if (initialized) revert AlreadyInitialized();
+        permit2 = IPermit2(_permit2);
+        owner = _owner;
+
+        initialized = true;
     }
 
     /// @inheritdoc IReactor

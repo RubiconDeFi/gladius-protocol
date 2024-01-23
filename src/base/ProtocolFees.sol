@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
-import {Owned} from "solmate/src/auth/Owned.sol";
-import {SafeTransferLib} from "solmate/src/utils/SafeTransferLib.sol";
-import {FixedPointMathLib} from "solmate/src/utils/FixedPointMathLib.sol";
-import {ERC20} from "solmate/src/tokens/ERC20.sol";
 import {IProtocolFeeController} from "../interfaces/IProtocolFeeController.sol";
-import {CurrencyLibrary} from "../lib/CurrencyLibrary.sol";
+import {FixedPointMathLib} from "solmate/src/utils/FixedPointMathLib.sol";
+import {SafeTransferLib} from "solmate/src/utils/SafeTransferLib.sol";
 import {ResolvedOrder, OutputToken} from "../base/ReactorStructs.sol";
+import {CurrencyLibrary} from "../lib/CurrencyLibrary.sol";
+import {ERC20} from "solmate/src/tokens/ERC20.sol";
+import {DSAuth} from "../lib/DSAuth.sol";
 
 /// @notice Handling for protocol fees
-abstract contract ProtocolFees is Owned {
+abstract contract ProtocolFees is DSAuth {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
     using CurrencyLibrary for address;
@@ -22,16 +22,16 @@ abstract contract ProtocolFees is Owned {
     /// @notice thrown if a fee output token does not have a corresponding non-fee output
     error InvalidFeeToken(address feeToken);
 
-    event ProtocolFeeControllerSet(address oldFeeController, address newFeeController);
+    event ProtocolFeeControllerSet(
+        address oldFeeController,
+        address newFeeController
+    );
 
     uint256 private constant BPS = 10_000;
     uint256 private constant MAX_FEE_BPS = 5;
 
     /// @dev The address of the fee controller
     IProtocolFeeController public feeController;
-
-    // @notice Required to customize owner from constructor of BaseReactor.sol
-    constructor(address _owner) Owned(_owner) {}
 
     /// @notice Injects fees into an order
     /// @dev modifies the orders to include protocol fee outputs
@@ -57,7 +57,7 @@ abstract contract ProtocolFees is Owned {
             }
         }
 
-        for (uint256 i = 0; i < feeOutputsLength;) {
+        for (uint256 i = 0; i < feeOutputsLength; ) {
             OutputToken memory feeOutput = feeOutputs[i];
             // assert no duplicates
             unchecked {
@@ -70,7 +70,7 @@ abstract contract ProtocolFees is Owned {
 
             // assert not greater than MAX_FEE_BPS
             uint256 tokenValue;
-            for (uint256 j = 0; j < outputsLength;) {
+            for (uint256 j = 0; j < outputsLength; ) {
                 OutputToken memory output = order.outputs[j];
                 if (output.token == feeOutput.token) {
                     tokenValue += output.amount;
@@ -81,7 +81,6 @@ abstract contract ProtocolFees is Owned {
             }
 
             // allow fee on input token as well
-	    /// @dev RM this line? Since 'RubiconMarket' doesn't support such tokens...
             if (address(order.input.token) == feeOutput.token) {
                 tokenValue += order.input.amount;
             }
@@ -89,7 +88,11 @@ abstract contract ProtocolFees is Owned {
             if (tokenValue == 0) revert InvalidFeeToken(feeOutput.token);
 
             if (feeOutput.amount > tokenValue.mulDivDown(MAX_FEE_BPS, BPS)) {
-                revert FeeTooLarge(feeOutput.token, feeOutput.amount, feeOutput.recipient);
+                revert FeeTooLarge(
+                    feeOutput.token,
+                    feeOutput.amount,
+                    feeOutput.recipient
+                );
             }
             newOutputs[outputsLength + i] = feeOutput;
 
@@ -104,7 +107,7 @@ abstract contract ProtocolFees is Owned {
     /// @notice sets the protocol fee controller
     /// @dev only callable by the owner
     /// @param _newFeeController the new fee controller
-    function setProtocolFeeController(address _newFeeController) external onlyOwner {
+    function setProtocolFeeController(address _newFeeController) external auth {
         address oldFeeController = address(feeController);
         feeController = IProtocolFeeController(_newFeeController);
         emit ProtocolFeeControllerSet(oldFeeController, _newFeeController);

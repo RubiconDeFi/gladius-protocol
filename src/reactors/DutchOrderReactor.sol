@@ -21,11 +21,6 @@ contract DutchOrderReactor is BaseReactor {
     /// @notice thrown when an order's inputs and outputs both decay
     error InputAndOutputDecay();
 
-    constructor(
-        IPermit2 _permit2,
-        address _protocolFeeOwner
-    ) BaseReactor(_permit2, _protocolFeeOwner) {}
-
     /// @inheritdoc BaseReactor
     function resolve(
         SignedOrder calldata signedOrder
@@ -68,9 +63,7 @@ contract DutchOrderReactor is BaseReactor {
 
     /// @notice validate the dutch order fields
     /// - deadline must be greater than or equal than decayEndTime
-    /// - decayEndTime must be greater than or equal to decayStartTime
     /// - if there's input decay, outputs must not decay
-    /// - for input decay, startAmount must < endAmount
     /// @dev Throws if the order is invalid
     function _validateOrder(DutchOrder memory order) internal pure {
         if (order.info.deadline < order.decayEndTime) {

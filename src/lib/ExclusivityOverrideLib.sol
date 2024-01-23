@@ -29,7 +29,7 @@ library ExclusivityOverrideLib {
         uint256 exclusivityOverrideBps
     ) internal view {
         // if the filler has fill right, we proceed with the order as-is
-        if (checkExclusivity(exclusive, exclusivityEndTime)) {
+        if (hasFillingRights(exclusive, exclusivityEndTime)) {
             return;
         }
 
@@ -40,9 +40,12 @@ library ExclusivityOverrideLib {
 
         // scale outputs by override amount
         OutputToken[] memory outputs = order.outputs;
-        for (uint256 i = 0; i < outputs.length;) {
+        for (uint256 i = 0; i < outputs.length; ) {
             OutputToken memory output = outputs[i];
-            output.amount = output.amount.mulDivDown(BPS + exclusivityOverrideBps, BPS);
+            output.amount = output.amount.mulDivDown(
+                BPS + exclusivityOverrideBps,
+                BPS
+            );
 
             unchecked {
                 i++;
@@ -50,11 +53,17 @@ library ExclusivityOverrideLib {
         }
     }
 
-    /// @notice checks if the order currently passes the exclusivity check
+    /// @notice checks if the caller currently has filling rights on the order
     /// @dev if the order has no exclusivity, always returns true
-    /// @dev if the order has exclusivity and the current filler is the exclusive address, returns true
-    /// @dev if the order has exclusivity and the current filler is not the exclusive address, returns false
-    function checkExclusivity(address exclusive, uint256 exclusivityEndTime) internal view returns (bool pass) {
-        return exclusive == address(0) || block.timestamp > exclusivityEndTime || exclusive == msg.sender;
+    /// @dev if the order has active exclusivity and the current filler is the exclusive address, returns true
+    /// @dev if the order has active exclusivity and the current filler is not the exclusive address, returns false
+    function hasFillingRights(
+        address exclusive,
+        uint256 exclusivityEndTime
+    ) internal view returns (bool pass) {
+        return
+            exclusive == address(0) ||
+            block.timestamp > exclusivityEndTime ||
+            exclusive == msg.sender;
     }
 }

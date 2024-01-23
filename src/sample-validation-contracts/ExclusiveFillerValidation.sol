@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {IValidationCallback} from "../interfaces/IValidationCallback.sol";
 import {ResolvedOrder, OrderInfo} from "../base/ReactorStructs.sol";
 
+/// @notice Validation for orders that are exclusive to a single filler
 contract ExclusiveFillerValidation is IValidationCallback {
     /// @notice thrown if the filler does not have fill rights
     error NotExclusiveFiller(address filler);
@@ -12,10 +13,18 @@ contract ExclusiveFillerValidation is IValidationCallback {
     /// @dev reverts if invalid filler given the exclusivity parameters
     /// @param filler The filler of the order
     /// @param resolvedOrder The order data to validate
-    function validate(address filler, ResolvedOrder calldata resolvedOrder) external view {
-        (address exclusiveFiller, uint256 lastExclusiveTimestamp) =
-            abi.decode(resolvedOrder.info.additionalValidationData, (address, uint256));
-        if (lastExclusiveTimestamp >= block.timestamp && filler != exclusiveFiller) {
+    function validate(
+        address filler,
+        ResolvedOrder calldata resolvedOrder
+    ) external view {
+        (address exclusiveFiller, uint256 lastExclusiveTimestamp) = abi.decode(
+            resolvedOrder.info.additionalValidationData,
+            (address, uint256)
+        );
+        if (
+            lastExclusiveTimestamp >= block.timestamp &&
+            filler != exclusiveFiller
+        ) {
             revert NotExclusiveFiller(filler);
         }
     }

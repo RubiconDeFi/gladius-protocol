@@ -15,7 +15,7 @@ import {PermitSignature} from "../util/PermitSignature.sol";
 import {DeployPermit2} from "../util/DeployPermit2.sol";
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 import {MockFillContract} from "../util/mock/MockFillContract.sol";
-import {RubiconFeeController} from "../../src/rubicon-executor/RubiconFeeController.sol";
+import {RubiconFeeController} from "../../src/fee-controllers/RubiconFeeController.sol";
 import {ExclusiveDutchOrderReactor, ExclusiveDutchOrder, DutchInput, DutchOutput} from "../../src/reactors/ExclusiveDutchOrderReactor.sol";
 
 contract RubiconFeeControllerTest is Test {
@@ -49,7 +49,7 @@ contract RubiconFeeControllerTest is Test {
         fees.setProtocolFeeController(address(feeController));
     }
 
-    function testFuzzPairHashUniformity(
+    function testFuzz_PairHashUniformity(
         address tokenIn,
         address tokenOut
     ) public {
@@ -60,7 +60,7 @@ contract RubiconFeeControllerTest is Test {
         assertEq(hash0, hash1);
     }
 
-    function testSetFeeController() public {
+    function test_SetFeeController() public {
         assertEq(address(fees.feeController()), address(feeController));
         vm.expectEmit(true, true, false, false);
         emit ProtocolFeeControllerSet(address(feeController), address(2));
@@ -70,20 +70,22 @@ contract RubiconFeeControllerTest is Test {
         assertEq(address(fees.feeController()), address(2));
     }
 
-    function testSetFeeControllerAuth() public {
+    function test_SetFeeControllerAuth() public {
         assertEq(address(fees.feeController()), address(feeController));
+	
         vm.prank(address(1));
-        vm.expectRevert("UNAUTHORIZED");
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
         fees.setProtocolFeeController(address(2));
+	
         assertEq(address(fees.feeController()), address(feeController));
     }
 
-    function testTakeFeesNoFees() public {
+    function test_TakeFeesNoFees() public {
         ResolvedOrder memory order = createOrder(1 ether, false);
 
         assertEq(order.outputs.length, 1);
         vm.prank(PROTOCOL_FEE_OWNER);
-        feeController.setFee(address(tokenIn), address(tokenOut), 0, true);
+        feeController.setPairBasedFee(address(tokenIn), address(tokenOut), 0, true);
         ResolvedOrder memory afterFees = fees.takeFees(order);
         assertEq(afterFees.outputs.length, 1);
         assertEq(afterFees.outputs[0].token, order.outputs[0].token);
@@ -91,13 +93,13 @@ contract RubiconFeeControllerTest is Test {
         assertEq(afterFees.outputs[0].recipient, order.outputs[0].recipient);
     }
 
-    function testPairBasedFee() public {
+    function test_PairBasedFee() public {
         ResolvedOrder memory order = createOrder(1 ether, false);
         uint256 feeBps = 3;
         /// @dev Apply pair-based fee.
         vm.prank(PROTOCOL_FEE_OWNER);
 
-        feeController.setFee(address(tokenIn), address(tokenOut), feeBps, true);
+        feeController.setPairBasedFee(address(tokenIn), address(tokenOut), feeBps, true);
 
         assertEq(order.outputs.length, 1);
         ResolvedOrder memory afterFees = fees.takeFees(order);
@@ -114,7 +116,7 @@ contract RubiconFeeControllerTest is Test {
         assertEq(afterFees.outputs[1].recipient, RECIPIENT);
     }
 
-    function testBaseFee() public {
+    function test_BaseFee() public {
         ResolvedOrder memory order = createOrder(1 ether, false);
         /// @dev Enable fee, but apply only BASE_FEE.
         vm.prank(PROTOCOL_FEE_OWNER);
@@ -134,14 +136,14 @@ contract RubiconFeeControllerTest is Test {
         assertEq(afterFees.outputs[1].recipient, RECIPIENT);
     }
 
-    function testFuzzPairBasedFee(uint256 feeBps) public {
+    function testFuzz_PairBasedFee(uint256 feeBps) public {
         vm.assume(feeBps >= 0 && feeBps < 50);
 
         ResolvedOrder memory order = createOrder(1 ether, false);
         /// @dev Apply pair-based fee.
         vm.prank(PROTOCOL_FEE_OWNER);
 
-        feeController.setFee(
+        feeController.setPairBasedFee(
             address(tokenIn),
             address(tokenOut),
             feeBps,

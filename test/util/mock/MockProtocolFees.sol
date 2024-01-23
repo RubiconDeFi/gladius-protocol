@@ -6,7 +6,9 @@ import {ResolvedOrder} from "../../../src/base/ReactorStructs.sol";
 import {ProtocolFees} from "../../../src/base/ProtocolFees.sol";
 
 contract MockProtocolFees is ProtocolFees {
-    constructor(address _protocolFeeOwner) ProtocolFees(_protocolFeeOwner) {}
+    constructor(address _protocolFeeOwner) {
+	owner = _protocolFeeOwner;
+    }
 
     function takeFees(ResolvedOrder memory order) external view returns (ResolvedOrder memory) {
         _injectFees(order);
