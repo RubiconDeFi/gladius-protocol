@@ -42,8 +42,6 @@ library PartialFillLib {
     error InvalidThreshold();
     /// @notice Thrown, if 'quantity' to take from an order, is less than order's threshold.
     error QuantityLtThreshold();
-    /// @notice Thrown, when a rounding error, implies into a precision loss >0.1%
-    error RelativeErrTooBig();
 
     bytes internal constant GLADIUS_ORDER_TYPE =
         abi.encodePacked(
@@ -129,12 +127,6 @@ library PartialFillLib {
             revert PartialFillOverflow();
         if (_quantity == 0 || _outPart == 0) revert PartialFillUnderflow();
         if (_quantity < _fillThreshold) revert QuantityLtThreshold();
-
-        // Check for precision loss.
-        uint256 _rem = (_quantity * _initOut) % _initIn;
-        bool _isError = _rem * 1_000 >= _initIn * _quantity;
-
-        if (_isError) revert RelativeErrTooBig();
     }
 
     /// @dev Order's 'fillThreshold' is valid if:
