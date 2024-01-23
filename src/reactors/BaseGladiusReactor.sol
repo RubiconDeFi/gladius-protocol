@@ -14,8 +14,8 @@ import {ReactorEvents} from "../base/ReactorEvents.sol";
 import {ProtocolFees} from "../base/ProtocolFees.sol";
 import {ERC20} from "solmate/src/tokens/ERC20.sol";
 
-/// @notice Gladius-specific reactor logic for settling off-chain signed
-///         gladius-orders using arbitrary fill methods specified by a filler.
+/// @notice Base gladius reactor logic for settling off-chain signed 'gladius-orders'
+///         using arbitrary fill methods specified by a filler.
 abstract contract BaseGladiusReactor is
     IGladiusReactor,
     ReactorEvents,
