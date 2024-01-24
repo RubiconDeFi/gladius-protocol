@@ -76,6 +76,41 @@ contract GladiusReactor is BaseGladiusReactor {
         );
     }
 
+    /// @notice Resolves order into 'GladiusOrder' and applies a decay function.
+    function resolve(
+        SignedOrder calldata signedOrder
+    ) internal view override returns (ResolvedOrder memory resolvedOrder) {
+        GladiusOrder memory order = abi.decode(
+            signedOrder.order,
+            (GladiusOrder)
+        );
+
+        _validateOrder(order);
+
+        /// @dev Apply decay function.
+        InputToken memory input = order.input.decay(
+            order.decayStartTime,
+            order.decayEndTime
+        );
+        OutputToken[] memory outputs = order.outputs.decay(
+            order.decayStartTime,
+            order.decayEndTime
+        );
+
+        resolvedOrder = ResolvedOrder({
+            info: order.info,
+            input: input,
+            outputs: outputs,
+            sig: signedOrder.sig,
+            hash: order.hash()
+        });
+        resolvedOrder.handleOverride(
+            order.exclusiveFiller,
+            order.decayStartTime,
+            order.exclusivityOverrideBps
+        );
+    }    
+
     /// @inheritdoc BaseGladiusReactor
     function transferInputTokens(
         ResolvedOrder memory order,

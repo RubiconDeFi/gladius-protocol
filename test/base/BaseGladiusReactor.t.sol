@@ -101,8 +101,10 @@ abstract contract BaseGladiusReactorTest is
         return (signedOrders, orderHashes);
     }
 
+    //-------------------------- GLADIUS EXEC --------------------------
+
     /// @dev Test of a simple execute with 'quantity'.
-    function test_BaseGladiusExecute() public {
+    function test_GladiusExecute() public {
         uint256 inputAmount = 1 ether;
         uint256 quantity = inputAmount;
         uint256 outputAmount = 1 ether;
@@ -143,7 +145,7 @@ abstract contract BaseGladiusReactorTest is
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
         // execute order
 
-        _snapStart("ExecuteSingle");
+        _snapStart("GladiusExecuteSingle");
         fillContract.execute(signedOrder, quantity);
 
         snapEnd();
@@ -167,7 +169,7 @@ abstract contract BaseGladiusReactorTest is
     }
 
     /// @dev Basic execute test with protocol fee, checks balance before and after
-    function test_BaseExecuteWithFee() public {
+    function test_GladiusExecuteWithFee() public {
         uint256 inputAmount = 1 ether;
         uint256 quantity = inputAmount;
         uint256 outputAmount = 1 ether;
@@ -212,7 +214,7 @@ abstract contract BaseGladiusReactorTest is
         vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
         // execute order
-        _snapStart("BaseExecuteSingleWithFee");
+        _snapStart("GladiusBaseExecuteSingleWithFee");
         fillContract.execute(signedOrder, quantity);
         snapEnd();
 
@@ -237,7 +239,7 @@ abstract contract BaseGladiusReactorTest is
     }
 
     /// @dev Basic execute test for native currency, checks balance before and after
-    function test_BaseExecuteNativeOutput() public {
+    function test_GladiusExecuteNativeOutput() public {
         uint256 inputAmount = 1 ether;
         uint256 quantity = inputAmount;
         uint256 outputAmount = 1 ether;
@@ -276,7 +278,7 @@ abstract contract BaseGladiusReactorTest is
         vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
         // execute order
-        _snapStart("ExecuteSingleNativeOutput");
+        _snapStart("GladiusExecuteSingleNativeOutput");
         fillContract.execute(signedOrder, quantity);
         snapEnd();
 
@@ -299,7 +301,7 @@ abstract contract BaseGladiusReactorTest is
     }
 
     /// @dev Execute test with a succeeding validation contract
-    function test_BaseExecuteValidationContract() public {
+    function test_GladiusExecuteValidationContract() public {
         uint256 inputAmount = 1 ether;
         uint256 quantity = inputAmount;
         uint256 outputAmount = 1 ether;
@@ -343,8 +345,1027 @@ abstract contract BaseGladiusReactorTest is
         vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
         // execute order
-        _snapStart("ExecuteSingleValidation");
+        _snapStart("GladiusExecuteSingleValidation");
         fillContract.execute(signedOrder, quantity);
+        snapEnd();
+
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(swapper)),
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(fillContract)),
+            fillContractOutputBalanceStart - outputAmount
+        );
+    }
+
+    /// @dev Basic batch execute test
+    // Two orders: (inputs = 1, outputs = 2), (inputs = 2, outputs = 4)
+    function test_GladiusExecuteBatch() public {
+        uint256 inputAmount = ONE;
+        uint256 outputAmount = 2 * inputAmount;
+
+        tokenIn.mint(address(swapper), inputAmount * 3);
+        tokenOut.mint(address(fillContract), 6 ether);
+        tokenIn.forceApprove(swapper, address(permit2), type(uint256).max);
+
+        uint256 totalOutputAmount = 3 * outputAmount;
+        uint256 totalInputAmount = 3 * inputAmount;
+
+        ResolvedOrder[] memory orders = new ResolvedOrder[](2);
+
+        orders[0] = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(block.timestamp + 100)
+                .withNonce(0),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        orders[1] = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(block.timestamp + 100)
+                .withNonce(1),
+            input: InputToken(tokenIn, 2 * inputAmount, 2 * inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                2 * outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder[] memory signedOrders,
+            bytes32[] memory orderHashes
+        ) = createAndSignBatchOrders(orders);
+        vm.expectEmit(true, true, true, true);
+        emit Fill(
+            orderHashes[0],
+            address(fillContract),
+            swapper,
+            orders[0].info.nonce
+        );
+        vm.expectEmit(true, true, true, true);
+        emit Fill(
+            orderHashes[1],
+            address(fillContract),
+            swapper,
+            orders[1].info.nonce
+        );
+
+        uint256[] memory quantities = new uint256[](signedOrders.length);
+        quantities[0] = inputAmount;
+        quantities[1] = 2 * inputAmount;
+
+        _snapStart("GladiusExecuteBatch");
+        fillContract.executeBatch(signedOrders, quantities);
+        snapEnd();
+
+        assertEq(tokenOut.balanceOf(swapper), totalOutputAmount);
+        assertEq(tokenIn.balanceOf(address(fillContract)), totalInputAmount);
+    }
+
+    /// @dev Basic batch execute test with native output
+    function test_GladiusExecuteBatchNativeOutput() public {
+        uint256 inputAmount = ONE;
+        uint256 outputAmount = 2 * inputAmount;
+
+        tokenIn.mint(address(swapper), inputAmount * 3);
+        vm.deal(address(fillContract), 6 ether);
+        tokenIn.forceApprove(swapper, address(permit2), type(uint256).max);
+
+        uint256 totalOutputAmount = 3 * outputAmount;
+        uint256 totalInputAmount = 3 * inputAmount;
+
+        ResolvedOrder[] memory orders = new ResolvedOrder[](2);
+
+        orders[0] = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(block.timestamp + 100)
+                .withNonce(0),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(NATIVE, outputAmount, swapper),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        orders[1] = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(block.timestamp + 100)
+                .withNonce(1),
+            input: InputToken(tokenIn, 2 * inputAmount, 2 * inputAmount),
+            outputs: OutputsBuilder.single(NATIVE, 2 * outputAmount, swapper),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder[] memory signedOrders,
+            bytes32[] memory orderHashes
+        ) = createAndSignBatchOrders(orders);
+        vm.expectEmit(true, true, true, true);
+        emit Fill(
+            orderHashes[0],
+            address(fillContract),
+            swapper,
+            orders[0].info.nonce
+        );
+        vm.expectEmit(true, true, true, true);
+        emit Fill(
+            orderHashes[1],
+            address(fillContract),
+            swapper,
+            orders[1].info.nonce
+        );
+
+        uint256[] memory quantities = new uint256[](signedOrders.length);
+        quantities[0] = inputAmount;
+        quantities[1] = 2 * inputAmount;
+
+        _snapStart("GladiusExecuteBatchNativeOutput");
+        fillContract.executeBatch(signedOrders, quantities);
+        snapEnd();
+
+        assertEq(swapper.balance, totalOutputAmount);
+        assertEq(tokenIn.balanceOf(address(fillContract)), totalInputAmount);
+    }
+
+    /// @dev Base test preventing signatures from being reused
+    function test_GladiusExecuteSignatureReplay() public {
+        // Seed both swapper and fillContract with enough tokens
+        uint256 inputAmount = ONE;
+        uint256 quantity = inputAmount;
+        uint256 outputAmount = ONE * 2;
+        tokenIn.mint(address(swapper), inputAmount * 100);
+        tokenOut.mint(address(fillContract), outputAmount * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(block.timestamp + 100),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            uint256 swapperOutputBalanceStart,
+            uint256 fillContractOutputBalanceStart
+        ) = _checkpointBalances();
+
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        fillContract.execute(signedOrder, quantity);
+
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(swapper)),
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(fillContract)),
+            fillContractOutputBalanceStart - outputAmount
+        );
+
+        tokenIn.mint(address(swapper), inputAmount);
+        tokenOut.mint(address(fillContract), outputAmount);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        bytes memory oldSignature = signedOrder.sig;
+        order.info.nonce = 1;
+        // Create a new order, but use the previous signature
+        (signedOrder, orderHash) = createAndSignOrder(order);
+        signedOrder.sig = oldSignature;
+
+        vm.expectRevert(InvalidSigner.selector);
+        fillContract.execute(signedOrder, quantity);
+    }
+
+    /// @dev Base test preventing nonce reuse
+    function test_GladiusNonceReuse() public {
+        uint256 inputAmount = ONE;
+        uint256 quantity = inputAmount;
+        uint256 outputAmount = ONE * 2;
+        tokenIn.mint(address(swapper), inputAmount * 100);
+        tokenOut.mint(address(fillContract), outputAmount * 100);
+        // approve for 2 orders here
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount * 2);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(block.timestamp + 100)
+                .withNonce(123),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            uint256 swapperOutputBalanceStart,
+            uint256 fillContractOutputBalanceStart
+        ) = _checkpointBalances();
+
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        fillContract.execute(signedOrder, quantity);
+
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(swapper)),
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(fillContract)),
+            fillContractOutputBalanceStart - outputAmount
+        );
+
+        // change deadline so sig and orderhash is different but nonce is the same
+        order.info.deadline = block.timestamp + 101;
+        (signedOrder, orderHash) = createAndSignOrder(order);
+        vm.expectRevert(InvalidNonce.selector);
+        fillContract.execute(signedOrder, quantity);
+    }
+
+    /// @dev Test executing two orders on two reactors at once
+    /// @dev executing the second order inside the callback of the first's execution
+    function test_GladiusExecuteTwoReactorsAtOnce() public {
+        BaseGladiusReactor otherReactor = createReactor();
+        MockFillContractDoubleExecutionGladius doubleExecutionFillContract = new MockFillContractDoubleExecutionGladius(
+                address(reactor),
+                address(otherReactor)
+            );
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), 2 ether);
+        tokenOut.mint(address(doubleExecutionFillContract), 2 ether);
+        tokenIn.forceApprove(swapper, address(permit2), type(uint256).max);
+
+        ResolvedOrder memory order1 = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(block.timestamp + 1000),
+            input: InputToken(tokenIn, 1 ether, 1 ether),
+            outputs: OutputsBuilder.single(address(tokenOut), 1 ether, swapper),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        ResolvedOrder memory order2 = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(otherReactor))
+                .withSwapper(swapper)
+                .withDeadline(block.timestamp + 1000)
+                .withNonce(1234),
+            input: InputToken(tokenIn, 1 ether, 1 ether),
+            outputs: OutputsBuilder.single(address(tokenOut), 1 ether, swapper),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder memory signedOrder1,
+            bytes32 orderHash1
+        ) = createAndSignOrder(order1);
+        (
+            SignedOrder memory signedOrder2,
+            bytes32 orderHash2
+        ) = createAndSignOrder(order2);
+
+        (
+            uint256 swapperInputBalanceStart,
+            ,
+            uint256 swapperOutputBalanceStart,
+
+        ) = _checkpointBalances();
+
+        // TODO: expand to allow for custom callbackData in 3rd param
+        vm.expectEmit(true, true, true, true, address(otherReactor));
+        emit Fill(
+            orderHash2,
+            address(doubleExecutionFillContract),
+            swapper,
+            order2.info.nonce
+        );
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(
+            orderHash1,
+            address(doubleExecutionFillContract),
+            swapper,
+            order1.info.nonce
+        );
+        doubleExecutionFillContract.execute(
+            signedOrder1,
+            signedOrder2,
+            1 ether, // quantity 1
+            1 ether // quantity 2
+        );
+
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - 2 ether
+        );
+        assertEq(
+            tokenOut.balanceOf(address(swapper)),
+            swapperOutputBalanceStart + 2 ether
+        );
+    }
+
+    /// @dev Basic execute test with protocol fee, checks balance before and after
+    function test_GladiusExecuteWithFee(
+        uint128 inputAmount,
+        uint128 outputAmount,
+        uint256 deadline,
+        uint8 feeBps
+    ) public {
+        inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
+        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
+	uint256 quantity = inputAmount;
+        vm.assume(deadline > block.timestamp);
+        vm.assume(feeBps <= 5);
+
+        vm.prank(PROTOCOL_FEE_OWNER);
+        reactor.setProtocolFeeController(address(feeController));
+        feeController.setFee(tokenIn, address(tokenOut), feeBps);
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            uint256 swapperOutputBalanceStart,
+            uint256 fillContractOutputBalanceStart
+        ) = _checkpointBalances();
+
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        // execute order
+        fillContract.execute(signedOrder, quantity);
+
+        uint256 feeAmount = (uint256(outputAmount) * feeBps) / 10000;
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(swapper)),
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(fillContract)),
+            fillContractOutputBalanceStart - outputAmount - feeAmount
+        );
+        assertEq(tokenOut.balanceOf(address(feeRecipient)), feeAmount);
+    }
+
+    /// @dev Basic execute test, checks balance before and after
+    function test_GladiusExecute(
+        uint128 inputAmount,
+        uint128 outputAmount,
+        uint256 deadline
+    ) public {
+        inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
+        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
+	uint256 quantity = inputAmount;
+        vm.assume(deadline > block.timestamp);
+
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            uint256 swapperOutputBalanceStart,
+            uint256 fillContractOutputBalanceStart
+        ) = _checkpointBalances();
+
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        // execute order
+        fillContract.execute(signedOrder, quantity);
+
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(swapper)),
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(fillContract)),
+            fillContractOutputBalanceStart - outputAmount
+        );
+    }
+
+    /// @dev Execute with a succeeding validation contract
+    function test_GladiusExecuteValidationContract(
+        uint128 inputAmount,
+        uint128 outputAmount,
+        uint256 deadline
+    ) public {
+        inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
+        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
+	uint256 quantity = inputAmount;	
+	
+        vm.assume(deadline > block.timestamp);
+
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline)
+                .withValidationContract(additionalValidationContract),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            uint256 swapperOutputBalanceStart,
+            uint256 fillContractOutputBalanceStart
+        ) = _checkpointBalances();
+
+        // TODO: expand to allow for custom callbackData in 3rd param
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        // execute order
+        fillContract.execute(signedOrder, quantity);
+
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(swapper)),
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(fillContract)),
+            fillContractOutputBalanceStart - outputAmount
+        );
+    }
+
+    /// @dev Execute with a failing validation contract
+    function test_GladiusExecuteValidationContractFail(
+        uint128 inputAmount,
+        uint128 outputAmount,
+        uint256 deadline
+    ) public {
+        inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
+        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
+	uint256 quantity = inputAmount;	
+        vm.assume(deadline > block.timestamp);
+
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+        additionalValidationContract.setValid(false);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline)
+                .withValidationContract(additionalValidationContract),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (SignedOrder memory signedOrder, ) = createAndSignOrder(order);
+
+        vm.expectRevert(MockValidationContract.MockValidationError.selector);
+        fillContract.execute(signedOrder, quantity);
+    }
+
+    /// @dev Execute with an invalid reactor
+    function test_GladiusExecuteInvalidReactor(
+        address orderReactor,
+        uint128 inputAmount,
+        uint128 outputAmount,
+        uint256 deadline
+    ) public {
+        inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
+        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
+	uint256 quantity = inputAmount;
+	
+        vm.assume(deadline > block.timestamp);
+        vm.assume(orderReactor != address(reactor));
+
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(orderReactor)
+                .withSwapper(swapper)
+                .withDeadline(deadline)
+                .withValidationContract(additionalValidationContract),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (SignedOrder memory signedOrder, ) = createAndSignOrder(order);
+
+        vm.expectRevert(ResolvedOrderLib.InvalidReactor.selector);
+        fillContract.execute(signedOrder, quantity);
+    }
+
+    /// @dev Execute with a deadline already passed
+    function test_GladiusExecuteDeadlinePassed(
+        uint128 inputAmount,
+        uint128 outputAmount,
+        uint256 deadline
+    ) public {
+	uint256 quantity = inputAmount;
+	
+        vm.assume(deadline < block.timestamp);
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline)
+                .withValidationContract(additionalValidationContract),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (SignedOrder memory signedOrder, ) = createAndSignOrder(order);
+
+        // cannot enforce selector as some reactors early throw in this case
+        vm.expectRevert();
+        fillContract.execute(signedOrder, quantity);
+    }
+
+    /// @dev Basic execute test for native currency, checks balance before and after
+    function test_GladiusExecuteNativeOutput(
+        uint128 inputAmount,
+        uint128 outputAmount,
+        uint256 deadline
+    ) public {
+        inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
+        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
+	uint256 quantity = inputAmount;
+        vm.assume(deadline > block.timestamp);
+
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        vm.deal(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(NATIVE, outputAmount, swapper),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        uint256 swapperOutputBalanceStart = address(swapper).balance;
+        uint256 fillContractOutputBalanceStart = address(fillContract).balance;
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            ,
+
+        ) = _checkpointBalances();
+
+        // TODO: expand to allow for custom callbackData in 3rd param
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        // execute order
+        fillContract.execute(signedOrder, quantity);
+
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            address(swapper).balance,
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            address(fillContract).balance,
+            fillContractOutputBalanceStart - outputAmount
+        );
+    }
+
+    //-------------------------- BASE EXEC --------------------------
+
+    /// @dev Test of a simple execute with 'quantity'.
+    function test_BaseExecute() public {
+        uint256 inputAmount = 1 ether;
+        uint256 outputAmount = 1 ether;
+        uint256 deadline = block.timestamp + 1000;
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            uint256 swapperOutputBalanceStart,
+            uint256 fillContractOutputBalanceStart
+        ) = _checkpointBalances();
+
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        // execute order
+
+        _snapStart("ExecuteSingle");
+        fillContract.execute(signedOrder);
+
+        snapEnd();
+
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(swapper)),
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(fillContract)),
+            fillContractOutputBalanceStart - outputAmount
+        );
+    }
+
+    /// @dev Basic execute test with protocol fee, checks balance before and after
+    function test_BaseExecuteWithFee() public {
+        uint256 inputAmount = 1 ether;
+        uint256 outputAmount = 1 ether;
+        uint256 deadline = block.timestamp + 1000;
+        uint8 feeBps = 3;
+
+        vm.prank(PROTOCOL_FEE_OWNER);
+        reactor.setProtocolFeeController(address(feeController));
+        feeController.setFee(tokenIn, address(tokenOut), feeBps);
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            uint256 swapperOutputBalanceStart,
+            uint256 fillContractOutputBalanceStart
+        ) = _checkpointBalances();
+
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        // execute order
+        _snapStart("ExecuteSingleWithFee");
+        fillContract.execute(signedOrder);
+        snapEnd();
+
+        uint256 feeAmount = (uint256(outputAmount) * feeBps) / 10000;
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(swapper)),
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            tokenOut.balanceOf(address(fillContract)),
+            fillContractOutputBalanceStart - outputAmount - feeAmount
+        );
+        assertEq(tokenOut.balanceOf(address(feeRecipient)), feeAmount);
+    }
+
+    /// @dev Basic execute test for native currency, checks balance before and after
+    function test_BaseExecuteNativeOutput() public {
+        uint256 inputAmount = 1 ether;
+        uint256 outputAmount = 1 ether;
+        uint256 deadline = block.timestamp + 1000;
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        vm.deal(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(NATIVE, outputAmount, swapper),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        uint256 swapperOutputBalanceStart = address(swapper).balance;
+        uint256 fillContractOutputBalanceStart = address(fillContract).balance;
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            ,
+
+        ) = _checkpointBalances();
+
+        // TODO: expand to allow for custom callbackData in 3rd param
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        // execute order
+        _snapStart("ExecuteSingleNativeOutput");
+        fillContract.execute(signedOrder);
+        snapEnd();
+
+        assertEq(
+            tokenIn.balanceOf(address(swapper)),
+            swapperInputBalanceStart - inputAmount
+        );
+        assertEq(
+            tokenIn.balanceOf(address(fillContract)),
+            fillContractInputBalanceStart + inputAmount
+        );
+        assertEq(
+            address(swapper).balance,
+            swapperOutputBalanceStart + outputAmount
+        );
+        assertEq(
+            address(fillContract).balance,
+            fillContractOutputBalanceStart - outputAmount
+        );
+    }
+
+    /// @dev Execute test with a succeeding validation contract
+    function test_BaseExecuteValidationContract() public {
+        uint256 inputAmount = 1 ether;
+        uint256 outputAmount = 1 ether;
+        uint256 deadline = block.timestamp + 1000;
+
+        vm.assume(deadline > block.timestamp);
+        // Seed both swapper and fillContract with enough tokens (important for dutch order)
+        tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
+        tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
+        tokenIn.forceApprove(swapper, address(permit2), inputAmount);
+
+        ResolvedOrder memory order = ResolvedOrder({
+            info: OrderInfoBuilder
+                .init(address(reactor))
+                .withSwapper(swapper)
+                .withDeadline(deadline)
+                .withValidationContract(additionalValidationContract),
+            input: InputToken(tokenIn, inputAmount, inputAmount),
+            outputs: OutputsBuilder.single(
+                address(tokenOut),
+                outputAmount,
+                swapper
+            ),
+            sig: hex"00",
+            hash: bytes32(0)
+        });
+
+        (
+            SignedOrder memory signedOrder,
+            bytes32 orderHash
+        ) = createAndSignOrder(order);
+
+        (
+            uint256 swapperInputBalanceStart,
+            uint256 fillContractInputBalanceStart,
+            uint256 swapperOutputBalanceStart,
+            uint256 fillContractOutputBalanceStart
+        ) = _checkpointBalances();
+
+        // TODO: expand to allow for custom callbackData in 3rd param
+        vm.expectEmit(true, true, true, true, address(reactor));
+        emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
+        // execute order
+        _snapStart("ExecuteSingleValidation");
+        fillContract.execute(signedOrder);
         snapEnd();
 
         assertEq(
@@ -431,12 +1452,8 @@ abstract contract BaseGladiusReactorTest is
             orders[1].info.nonce
         );
 
-        uint256[] memory quantities = new uint256[](signedOrders.length);
-        quantities[0] = inputAmount;
-        quantities[1] = 2 * inputAmount;
-
         _snapStart("ExecuteBatch");
-        fillContract.executeBatch(signedOrders, quantities);
+        fillContract.executeBatch(signedOrders);
         snapEnd();
 
         assertEq(tokenOut.balanceOf(swapper), totalOutputAmount);
@@ -500,12 +1517,8 @@ abstract contract BaseGladiusReactorTest is
             orders[1].info.nonce
         );
 
-        uint256[] memory quantities = new uint256[](signedOrders.length);
-        quantities[0] = inputAmount;
-        quantities[1] = 2 * inputAmount;
-
         _snapStart("ExecuteBatchNativeOutput");
-        fillContract.executeBatch(signedOrders, quantities);
+        fillContract.executeBatch(signedOrders);
         snapEnd();
 
         assertEq(swapper.balance, totalOutputAmount);
@@ -516,7 +1529,6 @@ abstract contract BaseGladiusReactorTest is
     function test_BaseExecuteSignatureReplay() public {
         // Seed both swapper and fillContract with enough tokens
         uint256 inputAmount = ONE;
-        uint256 quantity = inputAmount;
         uint256 outputAmount = ONE * 2;
         tokenIn.mint(address(swapper), inputAmount * 100);
         tokenOut.mint(address(fillContract), outputAmount * 100);
@@ -550,7 +1562,7 @@ abstract contract BaseGladiusReactorTest is
 
         vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
 
         assertEq(
             tokenIn.balanceOf(address(swapper)),
@@ -580,13 +1592,12 @@ abstract contract BaseGladiusReactorTest is
         signedOrder.sig = oldSignature;
 
         vm.expectRevert(InvalidSigner.selector);
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
     }
 
     /// @dev Base test preventing nonce reuse
     function test_BaseNonceReuse() public {
         uint256 inputAmount = ONE;
-        uint256 quantity = inputAmount;
         uint256 outputAmount = ONE * 2;
         tokenIn.mint(address(swapper), inputAmount * 100);
         tokenOut.mint(address(fillContract), outputAmount * 100);
@@ -622,7 +1633,7 @@ abstract contract BaseGladiusReactorTest is
 
         vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
 
         assertEq(
             tokenIn.balanceOf(address(swapper)),
@@ -645,7 +1656,7 @@ abstract contract BaseGladiusReactorTest is
         order.info.deadline = block.timestamp + 101;
         (signedOrder, orderHash) = createAndSignOrder(order);
         vm.expectRevert(InvalidNonce.selector);
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
     }
 
     /// @dev Test executing two orders on two reactors at once
@@ -663,7 +1674,7 @@ abstract contract BaseGladiusReactorTest is
 
         ResolvedOrder memory order1 = ResolvedOrder({
             info: OrderInfoBuilder
-                .init(address(reactor))
+                .init(address(otherReactor))
                 .withSwapper(swapper)
                 .withDeadline(block.timestamp + 1000),
             input: InputToken(tokenIn, 1 ether, 1 ether),
@@ -674,7 +1685,7 @@ abstract contract BaseGladiusReactorTest is
 
         ResolvedOrder memory order2 = ResolvedOrder({
             info: OrderInfoBuilder
-                .init(address(otherReactor))
+                .init(address(reactor))
                 .withSwapper(swapper)
                 .withDeadline(block.timestamp + 1000)
                 .withNonce(1234),
@@ -701,14 +1712,14 @@ abstract contract BaseGladiusReactorTest is
         ) = _checkpointBalances();
 
         // TODO: expand to allow for custom callbackData in 3rd param
-        vm.expectEmit(true, true, true, true, address(otherReactor));
+        vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(
             orderHash2,
             address(doubleExecutionFillContract),
             swapper,
             order2.info.nonce
         );
-        vm.expectEmit(true, true, true, true, address(reactor));
+        vm.expectEmit(true, true, true, true, address(otherReactor));
         emit Fill(
             orderHash1,
             address(doubleExecutionFillContract),
@@ -717,9 +1728,7 @@ abstract contract BaseGladiusReactorTest is
         );
         doubleExecutionFillContract.execute(
             signedOrder1,
-            signedOrder2,
-            1 ether, // quantity 1
-            1 ether // quantity 2
+            signedOrder2
         );
 
         assertEq(
@@ -741,7 +1750,7 @@ abstract contract BaseGladiusReactorTest is
     ) public {
         inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
         outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
-	uint256 quantity = inputAmount;
+	
         vm.assume(deadline > block.timestamp);
         vm.assume(feeBps <= 5);
 
@@ -783,7 +1792,7 @@ abstract contract BaseGladiusReactorTest is
         vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
         // execute order
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
 
         uint256 feeAmount = (uint256(outputAmount) * feeBps) / 10000;
         assertEq(
@@ -813,7 +1822,7 @@ abstract contract BaseGladiusReactorTest is
     ) public {
         inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
         outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
-	uint256 quantity = inputAmount;
+	
         vm.assume(deadline > block.timestamp);
 
         // Seed both swapper and fillContract with enough tokens (important for dutch order)
@@ -851,7 +1860,7 @@ abstract contract BaseGladiusReactorTest is
         vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
         // execute order
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
 
         assertEq(
             tokenIn.balanceOf(address(swapper)),
@@ -879,7 +1888,7 @@ abstract contract BaseGladiusReactorTest is
     ) public {
         inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
         outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
-	uint256 quantity = inputAmount;	
+		
 	
         vm.assume(deadline > block.timestamp);
 
@@ -920,7 +1929,7 @@ abstract contract BaseGladiusReactorTest is
         vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
         // execute order
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
 
         assertEq(
             tokenIn.balanceOf(address(swapper)),
@@ -948,7 +1957,7 @@ abstract contract BaseGladiusReactorTest is
     ) public {
         inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
         outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
-	uint256 quantity = inputAmount;	
+		
         vm.assume(deadline > block.timestamp);
 
         // Seed both swapper and fillContract with enough tokens (important for dutch order)
@@ -976,7 +1985,7 @@ abstract contract BaseGladiusReactorTest is
         (SignedOrder memory signedOrder, ) = createAndSignOrder(order);
 
         vm.expectRevert(MockValidationContract.MockValidationError.selector);
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
     }
 
     /// @dev Execute with an invalid reactor
@@ -988,7 +1997,7 @@ abstract contract BaseGladiusReactorTest is
     ) public {
         inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
         outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
-	uint256 quantity = inputAmount;
+	
 	
         vm.assume(deadline > block.timestamp);
         vm.assume(orderReactor != address(reactor));
@@ -1017,7 +2026,7 @@ abstract contract BaseGladiusReactorTest is
         (SignedOrder memory signedOrder, ) = createAndSignOrder(order);
 
         vm.expectRevert(ResolvedOrderLib.InvalidReactor.selector);
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
     }
 
     /// @dev Execute with a deadline already passed
@@ -1025,9 +2034,7 @@ abstract contract BaseGladiusReactorTest is
         uint128 inputAmount,
         uint128 outputAmount,
         uint256 deadline
-    ) public {
-	uint256 quantity = inputAmount;
-	
+    ) public {      	
         vm.assume(deadline < block.timestamp);
         // Seed both swapper and fillContract with enough tokens (important for dutch order)
         tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
@@ -1054,7 +2061,7 @@ abstract contract BaseGladiusReactorTest is
 
         // cannot enforce selector as some reactors early throw in this case
         vm.expectRevert();
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
     }
 
     /// @dev Basic execute test for native currency, checks balance before and after
@@ -1064,8 +2071,7 @@ abstract contract BaseGladiusReactorTest is
         uint256 deadline
     ) public {
         inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
-        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
-	uint256 quantity = inputAmount;
+        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));	
         vm.assume(deadline > block.timestamp);
 
         // Seed both swapper and fillContract with enough tokens (important for dutch order)
@@ -1102,7 +2108,7 @@ abstract contract BaseGladiusReactorTest is
         vm.expectEmit(true, true, true, true, address(reactor));
         emit Fill(orderHash, address(fillContract), swapper, order.info.nonce);
         // execute order
-        fillContract.execute(signedOrder, quantity);
+        fillContract.execute(signedOrder);
 
         assertEq(
             tokenIn.balanceOf(address(swapper)),
@@ -1120,7 +2126,7 @@ abstract contract BaseGladiusReactorTest is
             address(fillContract).balance,
             fillContractOutputBalanceStart - outputAmount
         );
-    }
+    }    
 
     function _checkpointBalances()
         internal
