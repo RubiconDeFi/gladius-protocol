@@ -23,12 +23,24 @@ contract MockGladiusFill is IReactorCallback {
     }
 
     /// @notice assume that we already have all output tokens
+    function execute(SignedOrder calldata order) external {
+        reactor.executeWithCallback(order, hex"");
+    }    
+
+    /// @notice assume that we already have all output tokens
     function executeBatch(
         SignedOrder[] calldata orders,
         uint256[] calldata quantities
     ) external {
         reactor.executeBatchWithCallback(orders, quantities, hex"");
     }
+
+    /// @notice assume that we already have all output tokens
+    function executeBatch(
+        SignedOrder[] calldata orders
+    ) external {
+        reactor.executeBatchWithCallback(orders, hex"");
+    }    
 
     /// @notice assume that we already have all output tokens
     function reactorCallback(
