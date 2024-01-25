@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import {IProtocolFeeController} from "../interfaces/IProtocolFeeController.sol";
 import {FixedPointMathLib} from "solmate/src/utils/FixedPointMathLib.sol";
 import {ResolvedOrder, OutputToken} from "../base/ReactorStructs.sol";
+import {GladiusReactor} from "../reactors/GladiusReactor.sol";
 import {ProxyConstructor} from "../lib/ProxyConstructor.sol";
 import {ERC20} from "solmate/src/tokens/ERC20.sol";
 import {DSAuth} from "../lib/DSAuth.sol";
@@ -20,8 +21,9 @@ contract RubiconFeeController is
     using FixedPointMathLib for uint256;
 
     uint256 private constant DENOM = 100_000;
-    uint256 public constant BASE_FEE = 10;
+    uint256 public baseFee = 10;
     address public feeRecipient;
+    GladiusReactor public gladiusReactor;
 
     struct PairBasedFee {
         bool applyFee;
@@ -30,6 +32,9 @@ contract RubiconFeeController is
 
     /// @dev pair hash => pair-based fee
     mapping(bytes32 => PairBasedFee) public fees;
+
+    /// @dev New fee isn't in correct boundaries.
+    error InvalidFee();
 
     function initialize(
         address _owner,
@@ -57,7 +62,7 @@ contract RubiconFeeController is
     /// @notice Applies fee on output values in the form of output[0].token.
     function getFeeOutputs(
         ResolvedOrder memory order
-    ) external view override returns (OutputToken[] memory result) {
+    ) external view override returns (OutputToken[] memory result) {	
         /// @notice Right now the length is enforced by
         ///         'GladiusReactor' to be equal to 1.
         result = new OutputToken[](order.outputs.length);
@@ -75,7 +80,7 @@ contract RubiconFeeController is
 
             uint256 feeAmount = fee.applyFee
                 ? order.outputs[i].amount.mulDivUp(fee.fee, DENOM)
-                : order.outputs[i].amount.mulDivUp(BASE_FEE, DENOM);
+                : order.outputs[i].amount.mulDivUp(baseFee, DENOM);
 
             /// @dev If fee is applied to pair.
             if (feeAmount != 0) {
@@ -118,11 +123,23 @@ contract RubiconFeeController is
         uint256 fee,
         bool applyFee
     ) external auth {
+	if (fee > gladiusReactor.MAX_FEE())
+	    revert InvalidFee();
         bytes32 pairHash = getPairHash(tokenIn, tokenOut);
         fees[pairHash] = PairBasedFee({applyFee: applyFee, fee: fee});
     }
 
+    function setBaseFee(uint256 bFee) external auth {
+	if (bFee == 0 || bFee > gladiusReactor.MAX_FEE())
+	    revert InvalidFee();
+	baseFee = bFee;
+    }
+
     function setFeeRecipient(address recipient) external auth {
         feeRecipient = recipient;
+    }
+
+    function setGladiusReactor(address payable gr) external auth {
+	gladiusReactor = GladiusReactor(gr);
     }
 }
