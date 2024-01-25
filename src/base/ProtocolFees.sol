@@ -28,7 +28,7 @@ abstract contract ProtocolFees is DSAuth {
     );
 
     uint256 private constant BPS = 10_000;
-    uint256 private constant MAX_FEE_BPS = 5;
+    uint256 private constant MAX_FEE_BPS = 100;
 
     /// @dev The address of the fee controller
     IProtocolFeeController public feeController;
