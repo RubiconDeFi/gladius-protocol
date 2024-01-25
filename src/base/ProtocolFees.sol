@@ -27,8 +27,8 @@ abstract contract ProtocolFees is DSAuth {
         address newFeeController
     );
 
-    uint256 private constant BPS = 10_000;
-    uint256 private constant MAX_FEE_BPS = 100;
+    uint256 private constant DENOM = 100_000;
+    uint256 public constant MAX_FEE = 1_000;
 
     /// @dev The address of the fee controller
     IProtocolFeeController public feeController;
@@ -68,7 +68,7 @@ abstract contract ProtocolFees is DSAuth {
                 }
             }
 
-            // assert not greater than MAX_FEE_BPS
+            // assert not greater than MAX_FEE
             uint256 tokenValue;
             for (uint256 j = 0; j < outputsLength; ) {
                 OutputToken memory output = order.outputs[j];
@@ -86,8 +86,8 @@ abstract contract ProtocolFees is DSAuth {
             }
 
             if (tokenValue == 0) revert InvalidFeeToken(feeOutput.token);
-
-            if (feeOutput.amount > tokenValue.mulDivDown(MAX_FEE_BPS, BPS)) {
+	    
+            if (feeOutput.amount > tokenValue.mulDivDown(MAX_FEE, DENOM)) {
                 revert FeeTooLarge(
                     feeOutput.token,
                     feeOutput.amount,
