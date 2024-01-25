@@ -751,7 +751,7 @@ abstract contract BaseGladiusReactorTest is
         outputAmount = uint128(bound(outputAmount, 1e3, type(uint128).max));
 	uint256 quantity = inputAmount;
         vm.assume(deadline > block.timestamp);
-        vm.assume(feeBps <= 1_000);
+        vm.assume(feeBps >= 0 && feeBps <= reactor.MAX_FEE());
 
         vm.prank(PROTOCOL_FEE_OWNER);
         reactor.setProtocolFeeController(address(feeController));
