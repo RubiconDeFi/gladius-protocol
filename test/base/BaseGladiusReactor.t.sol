@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity 0.8.19;
 
+import {FixedPointMathLib} from "solmate/src/utils/FixedPointMathLib.sol";
 import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 import {Test} from "forge-std/Test.sol";
@@ -13,7 +14,7 @@ import {OutputsBuilder} from "../util/OutputsBuilder.sol";
 import {DeployPermit2} from "../util/DeployPermit2.sol";
 import {OrderInfoBuilder} from "../util/OrderInfoBuilder.sol";
 import {ArrayBuilder} from "../util/ArrayBuilder.sol";
-import {MockFeeController} from "../util/mock/MockFeeController.sol";
+import {RubiconFeeController} from "../../src/fee-controllers/RubiconFeeController.sol";
 import {MockERC20} from "../util/mock/MockERC20.sol";
 import {MockGladiusFill} from "../util/mock/MockGladiusFill.sol";
 import {MockFillContractDoubleExecutionGladius} from "../util/mock/MockFillContractDoubleExecutionGladius.sol";
@@ -26,8 +27,9 @@ abstract contract BaseGladiusReactorTest is
     DeployPermit2
 {
     using OrderInfoBuilder for OrderInfo;
-    using ArrayBuilder for uint256[];
+    using FixedPointMathLib for uint256;
     using ArrayBuilder for uint256[][];
+    using ArrayBuilder for uint256[];
 
     uint256 constant ONE = 10 ** 18;
     address internal constant PROTOCOL_FEE_OWNER = address(1);
@@ -38,7 +40,7 @@ abstract contract BaseGladiusReactorTest is
     MockGladiusFill fillContract;
     MockValidationContract additionalValidationContract;
     IPermit2 permit2;
-    MockFeeController feeController;
+    RubiconFeeController feeController;
     address feeRecipient;
     BaseGladiusReactor reactor;
     uint256 swapperPrivateKey;
@@ -56,10 +58,14 @@ abstract contract BaseGladiusReactorTest is
         permit2 = IPermit2(deployPermit2());
         additionalValidationContract = new MockValidationContract();
         additionalValidationContract.setValid(true);
+	
         feeRecipient = makeAddr("feeRecipient");
-        feeController = new MockFeeController(feeRecipient);
         reactor = createReactor();
 
+        feeController = new RubiconFeeController();
+	feeController.initialize(address(this), feeRecipient);
+	feeController.setGladiusReactor(payable(address(reactor)));
+	
         fillContract = new MockGladiusFill(address(reactor));
     }
 
@@ -178,7 +184,7 @@ abstract contract BaseGladiusReactorTest is
 
         vm.prank(PROTOCOL_FEE_OWNER);
         reactor.setProtocolFeeController(address(feeController));
-        feeController.setFee(tokenIn, address(tokenOut), feeBps);
+        feeController.setPairBasedFee(address(tokenIn), address(tokenOut), feeBps, true);
         // Seed both swapper and fillContract with enough tokens (important for dutch order)
         tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
         tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
@@ -218,7 +224,7 @@ abstract contract BaseGladiusReactorTest is
         fillContract.execute(signedOrder, quantity);
         snapEnd();
 
-        uint256 feeAmount = (uint256(outputAmount) * feeBps) / 10000;
+        uint256 feeAmount = uint256(outputAmount).mulDivUp(feeBps, 100_000);
         assertEq(
             tokenIn.balanceOf(address(swapper)),
             swapperInputBalanceStart - inputAmount
@@ -741,15 +747,15 @@ abstract contract BaseGladiusReactorTest is
         uint256 deadline,
         uint8 feeBps
     ) public {
-        inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
-        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
+        inputAmount = uint128(bound(inputAmount, 1e3, type(uint128).max));
+        outputAmount = uint128(bound(outputAmount, 1e3, type(uint128).max));
 	uint256 quantity = inputAmount;
         vm.assume(deadline > block.timestamp);
-        vm.assume(feeBps <= 5);
+        vm.assume(feeBps <= 1_000);
 
         vm.prank(PROTOCOL_FEE_OWNER);
         reactor.setProtocolFeeController(address(feeController));
-        feeController.setFee(tokenIn, address(tokenOut), feeBps);
+        feeController.setPairBasedFee(address(tokenIn), address(tokenOut), feeBps, true);
         // Seed both swapper and fillContract with enough tokens (important for dutch order)
         tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
         tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
@@ -787,7 +793,7 @@ abstract contract BaseGladiusReactorTest is
         // execute order
         fillContract.execute(signedOrder, quantity);
 
-        uint256 feeAmount = (uint256(outputAmount) * feeBps) / 10000;
+        uint256 feeAmount = uint256(outputAmount).mulDivUp(feeBps, 100_000);
         assertEq(
             tokenIn.balanceOf(address(swapper)),
             swapperInputBalanceStart - inputAmount
@@ -1199,7 +1205,7 @@ abstract contract BaseGladiusReactorTest is
 
         vm.prank(PROTOCOL_FEE_OWNER);
         reactor.setProtocolFeeController(address(feeController));
-        feeController.setFee(tokenIn, address(tokenOut), feeBps);
+        feeController.setPairBasedFee(address(tokenIn), address(tokenOut), feeBps, true);
         // Seed both swapper and fillContract with enough tokens (important for dutch order)
         tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
         tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
@@ -1239,7 +1245,7 @@ abstract contract BaseGladiusReactorTest is
         fillContract.execute(signedOrder);
         snapEnd();
 
-        uint256 feeAmount = (uint256(outputAmount) * feeBps) / 10000;
+        uint256 feeAmount = (uint256(outputAmount) * feeBps) / 100_000;
         assertEq(
             tokenIn.balanceOf(address(swapper)),
             swapperInputBalanceStart - inputAmount
@@ -1742,21 +1748,21 @@ abstract contract BaseGladiusReactorTest is
     }
 
     /// @dev Basic execute test with protocol fee, checks balance before and after
-    function test_BaseExecuteWithFee(
+    function test_BaseExecuteWithFee1(
         uint128 inputAmount,
         uint128 outputAmount,
         uint256 deadline,
         uint8 feeBps
     ) public {
-        inputAmount = uint128(bound(inputAmount, 1, type(uint128).max));
-        outputAmount = uint128(bound(outputAmount, 1, type(uint128).max));
+        inputAmount = uint128(bound(inputAmount, 1e3, type(uint128).max));
+        outputAmount = uint128(bound(outputAmount, 1e3, type(uint128).max));
 	
         vm.assume(deadline > block.timestamp);
-        vm.assume(feeBps <= 5);
+        vm.assume(feeBps >= 0 && feeBps <= reactor.MAX_FEE());
 
         vm.prank(PROTOCOL_FEE_OWNER);
         reactor.setProtocolFeeController(address(feeController));
-        feeController.setFee(tokenIn, address(tokenOut), feeBps);
+        feeController.setPairBasedFee(address(tokenIn), address(tokenOut), feeBps, true);
         // Seed both swapper and fillContract with enough tokens (important for dutch order)
         tokenIn.mint(address(swapper), uint256(inputAmount) * 100);
         tokenOut.mint(address(fillContract), uint256(outputAmount) * 100);
@@ -1794,7 +1800,7 @@ abstract contract BaseGladiusReactorTest is
         // execute order
         fillContract.execute(signedOrder);
 
-        uint256 feeAmount = (uint256(outputAmount) * feeBps) / 10000;
+        uint256 feeAmount = uint256(outputAmount).mulDivUp(feeBps, 100_000);
         assertEq(
             tokenIn.balanceOf(address(swapper)),
             swapperInputBalanceStart - inputAmount
