@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {InputToken, OutputToken, OrderInfo, ResolvedOrder, SignedOrder} from "../../src/base/ReactorStructs.sol";
 import {NATIVE} from "../../src/lib/CurrencyLibrary.sol";
 import {ProtocolFees} from "../../src/base/ProtocolFees.sol";
+import {GladiusReactor} from "../../src/reactors/GladiusReactor.sol";
 import {ResolvedOrderLib} from "../../src/lib/ResolvedOrderLib.sol";
 import {MockERC20} from "../util/mock/MockERC20.sol";
 import {OrderInfoBuilder} from "../util/OrderInfoBuilder.sol";
@@ -36,17 +37,36 @@ contract RubiconFeeControllerTest is Test {
     MockERC20 tokenOut2;
     MockProtocolFees fees;
     RubiconFeeController feeController;
+    GladiusReactor reactor;
 
     function setUp() public {
         fees = new MockProtocolFees(PROTOCOL_FEE_OWNER);
         tokenIn = new MockERC20("Input", "IN", 18);
         tokenOut = new MockERC20("Output", "OUT", 18);
         tokenOut2 = new MockERC20("Output2", "OUT", 18);
+
         feeController = new RubiconFeeController();
         feeController.initialize(PROTOCOL_FEE_OWNER, RECIPIENT);
 
-        vm.prank(PROTOCOL_FEE_OWNER);
+        reactor = new GladiusReactor();
+
+        vm.startPrank(PROTOCOL_FEE_OWNER);
+        feeController.setGladiusReactor(payable(address(reactor)));
         fees.setProtocolFeeController(address(feeController));
+        vm.stopPrank();
+    }
+
+    function testFuzz_InvalidPairBasedFee(
+        address i,
+        address j,
+        uint256 fee,
+	bool b
+    ) public {
+        vm.assume(fee > reactor.MAX_FEE());
+
+        vm.startPrank(PROTOCOL_FEE_OWNER);
+        vm.expectRevert(bytes4(keccak256("InvalidFee()")));
+        feeController.setPairBasedFee(i, j, fee, b);
     }
 
     function testFuzz_PairHashUniformity(
@@ -72,11 +92,11 @@ contract RubiconFeeControllerTest is Test {
 
     function test_SetFeeControllerAuth() public {
         assertEq(address(fees.feeController()), address(feeController));
-	
+
         vm.prank(address(1));
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
         fees.setProtocolFeeController(address(2));
-	
+
         assertEq(address(fees.feeController()), address(feeController));
     }
 
@@ -85,8 +105,14 @@ contract RubiconFeeControllerTest is Test {
 
         assertEq(order.outputs.length, 1);
         vm.prank(PROTOCOL_FEE_OWNER);
-        feeController.setPairBasedFee(address(tokenIn), address(tokenOut), 0, true);
+        feeController.setPairBasedFee(
+            address(tokenIn),
+            address(tokenOut),
+            0,
+            true
+        );
         ResolvedOrder memory afterFees = fees.takeFees(order);
+
         assertEq(afterFees.outputs.length, 1);
         assertEq(afterFees.outputs[0].token, order.outputs[0].token);
         assertEq(afterFees.outputs[0].amount, order.outputs[0].amount);
@@ -99,7 +125,12 @@ contract RubiconFeeControllerTest is Test {
         /// @dev Apply pair-based fee.
         vm.prank(PROTOCOL_FEE_OWNER);
 
-        feeController.setPairBasedFee(address(tokenIn), address(tokenOut), feeBps, true);
+        feeController.setPairBasedFee(
+            address(tokenIn),
+            address(tokenOut),
+            feeBps,
+            true
+        );
 
         assertEq(order.outputs.length, 1);
         ResolvedOrder memory afterFees = fees.takeFees(order);
@@ -131,13 +162,13 @@ contract RubiconFeeControllerTest is Test {
         assertEq(afterFees.outputs[1].token, order.outputs[0].token);
         assertEq(
             afterFees.outputs[1].amount,
-            (order.outputs[0].amount * feeController.BASE_FEE()) / 100_000
+            (order.outputs[0].amount * feeController.baseFee()) / 100_000
         );
         assertEq(afterFees.outputs[1].recipient, RECIPIENT);
     }
 
     function testFuzz_PairBasedFee(uint256 feeBps) public {
-        vm.assume(feeBps >= 0 && feeBps < 50);
+        vm.assume(feeBps > 0 && feeBps <= reactor.MAX_FEE());
 
         ResolvedOrder memory order = createOrder(1 ether, false);
         /// @dev Apply pair-based fee.
