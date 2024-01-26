@@ -82,7 +82,7 @@ library PartialFillLib {
     /// @param input - 'InputToken' struct after applied decay fn.
     /// @param output - 'OutputToken[](1)' struct after applied decay fn.
     /// @param fillThreshold - min amount of input, that should be filled.
-    function applyPartition(
+    function partition(
         uint256 quantity,
         InputToken memory input,
         OutputToken[] memory output,

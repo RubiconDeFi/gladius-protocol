@@ -733,7 +733,7 @@ contract GladiusReactorTest is
 
         /// @dev Apply partition function.
         (InputToken memory inPf, OutputToken[] memory outPf) = quant
-            .applyPartition(input, outputs, order.fillThreshold);
+            .partition(input, outputs, order.fillThreshold);
 
         uint256 initialExchangeRate = (
             input.amount.divWadUp(outputs[0].amount)
