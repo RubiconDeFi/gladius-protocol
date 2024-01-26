@@ -40,7 +40,7 @@ contract PartialFillLibTest is Test {
         vm.assume(quantity >= fillThreshold && quantity <= inAmt);
 
         // Mutate i/o structs.
-        (InputToken memory i, OutputToken[] memory o) = quantity.applyPartition(
+        (InputToken memory i, OutputToken[] memory o) = quantity.partition(
             input,
             output,
             fillThreshold

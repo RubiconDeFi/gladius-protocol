@@ -56,7 +56,7 @@ contract GladiusReactor is BaseGladiusReactor {
         );
 
         /// @dev Apply partition function.
-        (input, outputs) = quantity.applyPartition(
+        (input, outputs) = quantity.partition(
             input,
             outputs,
             order.fillThreshold
