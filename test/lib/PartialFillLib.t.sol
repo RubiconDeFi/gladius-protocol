@@ -22,6 +22,47 @@ contract PartialFillLibTest is Test {
         fillThreshold._validateThreshold(inputAmount);
     }
 
+    function testFuzz_ApplyPartition0Threshold(
+        uint256 inAmt,
+        uint256 outAmt,
+        uint256 quantity
+    ) public {
+	uint256 fillThreshold = 0;
+	
+        // avoid infamous overflow...
+        inAmt = bound(inAmt, 1e3, type(uint128).max);
+        outAmt = bound(outAmt, 1e3, type(uint128).max);
+
+        InputToken memory input = InputToken(t, inAmt, inAmt);
+        OutputToken[] memory output = new OutputToken[](1);
+        output[0] = OutputToken(address(t), outAmt, address(t));
+       
+        vm.assume(quantity <= 10 && quantity > 0);
+
+        // Mutate i/o structs.
+        (InputToken memory i, OutputToken[] memory o) = quantity.partition(
+            input,
+            output,
+            fillThreshold
+        );
+
+        assertLe(i.amount, input.amount);
+        assertGe(i.amount, fillThreshold);
+
+        assertLe(o[0].amount, output[0].amount);
+
+        uint256 initialExchangeRate = input.amount >= output[0].amount
+            ? input.amount.divWadUp(output[0].amount)
+            : output[0].amount.divWadUp(input.amount);
+
+        uint256 newExchangeRate = input.amount >= output[0].amount
+            ? i.amount.divWadUp(o[0].amount)
+            : o[0].amount.divWadUp(i.amount);
+
+        // Double-check that we won't break initial exchange rate.
+        assertEq(newExchangeRate, initialExchangeRate);
+    }
+
     function testFuzz_ApplyPartition(
         uint256 inAmt,
         uint256 outAmt,
@@ -52,15 +93,15 @@ contract PartialFillLibTest is Test {
         assertLe(o[0].amount, output[0].amount);
 
         uint256 initialExchangeRate = input.amount >= output[0].amount
-	    ? input.amount.divWadUp(output[0].amount)
-	    : output[0].amount.divWadUp(input.amount);
+            ? input.amount.divWadUp(output[0].amount)
+            : output[0].amount.divWadUp(input.amount);
 
-	uint256 newExchangeRate = input.amount >= output[0].amount
-	    ? i.amount.divWadUp(o[0].amount)
-	    : o[0].amount.divWadUp(i.amount);
+        uint256 newExchangeRate = input.amount >= output[0].amount
+            ? i.amount.divWadUp(o[0].amount)
+            : o[0].amount.divWadUp(i.amount);
 
-	// Double-check that we won't break initial exchange rate.
-	assertEq(newExchangeRate, initialExchangeRate);
+        // Double-check that we won't break initial exchange rate.
+        assertEq(newExchangeRate, initialExchangeRate);
     }
 
     function testFuzz_AllPartialFillErrors(
