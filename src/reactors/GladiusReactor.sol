@@ -13,8 +13,8 @@ import {Permit2Lib} from "../lib/Permit2Lib.sol";
 ///         The main differences between 'GladiusOrder' and 'ExclusiveDutchOrder' are:
 ///         * 'GladiusOrder' supports partial fills
 ///         * 'GladiusOrder' allows only 1 element in 'outputs' array.
-///         * 'GladiusOrder' in/out amounts additionally resolved, based on
-///           'quantity' argument, passed to 'execute' functions.
+///         * 'GladiusOrder' in/out amounts additionally resolved based on
+///           'quantity' argument, passed to 'execute*' functions.
 contract GladiusReactor is BaseGladiusReactor {
     using ExclusivityOverrideLib for ResolvedOrder;
     using PartialFillLib for GladiusOrder;
