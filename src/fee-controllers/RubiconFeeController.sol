@@ -21,7 +21,7 @@ contract RubiconFeeController is
     using FixedPointMathLib for uint256;
 
     uint256 private constant DENOM = 100_000;
-    uint256 public baseFee = 10;
+    uint256 public baseFee;
     address public feeRecipient;
     GladiusReactor public gladiusReactor;
 
