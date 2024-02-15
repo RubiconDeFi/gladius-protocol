@@ -43,6 +43,7 @@ contract RubiconFeeController is
         if (initialized) revert AlreadyInitialized();
         owner = _owner;
         feeRecipient = _feeRecipient;
+	baseFee = 10;
 
         initialized = true;
     }
