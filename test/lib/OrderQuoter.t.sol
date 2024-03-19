@@ -50,10 +50,10 @@ contract OrderQuoterTest is
         permit2 = IPermit2(deployPermit2());
 
         limitOrderReactor = new LimitOrderReactor();
-        limitOrderReactor.initialize(permit2, PROTOCOL_FEE_OWNER);
+        limitOrderReactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
 
         dutchOrderReactor = new DutchOrderReactor();
-        dutchOrderReactor.initialize(permit2, PROTOCOL_FEE_OWNER);
+        dutchOrderReactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
     }
 
     function testQuoteLimitOrder() public {

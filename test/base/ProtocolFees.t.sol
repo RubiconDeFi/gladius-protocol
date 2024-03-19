@@ -154,14 +154,14 @@ contract ProtocolFeesTest is Test {
 
     function testTakeFeesTooMuch() public {
         ResolvedOrder memory order = createOrderWithInterfaceFee(1 ether, false);
-        uint256 feeBps = 10;
+        uint256 feeBps = 101;
         feeController.setFee(tokenIn, address(tokenOut), feeBps);
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 ProtocolFees.FeeTooLarge.selector,
                 address(tokenOut),
-                order.outputs[0].amount * 2 * 10 / 10000,
+                order.outputs[0].amount * 2 * feeBps / 10000,
                 RECIPIENT
             )
         );
@@ -443,7 +443,7 @@ contract ProtocolFeesGasComparisonTest is Test, PermitSignature, DeployPermit2, 
         feeController = new MockFeeController(PROTOCOL_FEE_RECIPIENT);
         permit2 = IPermit2(deployPermit2());
         reactor = new ExclusiveDutchOrderReactor();
-	reactor.initialize(permit2, PROTOCOL_FEE_OWNER);
+	reactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
         fillContract = new MockFillContract(address(reactor));
         vm.prank(PROTOCOL_FEE_OWNER);
         reactor.setProtocolFeeController(address(feeController));

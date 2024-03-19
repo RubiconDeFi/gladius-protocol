@@ -44,7 +44,7 @@ contract ExclusiveFillerValidationTest is
         permit2 = IPermit2(deployPermit2());
 
         reactor = new DutchOrderReactor();
-        reactor.initialize(permit2, PROTOCOL_FEE_OWNER);
+        reactor.initialize(address(permit2), PROTOCOL_FEE_OWNER);
 
         fillContract = new MockFillContract(address(reactor));
         exclusiveFillerValidation = new ExclusiveFillerValidation();
