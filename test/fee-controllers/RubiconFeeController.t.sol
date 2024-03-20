@@ -18,11 +18,13 @@ import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
 import {MockFillContract} from "../util/mock/MockFillContract.sol";
 import {RubiconFeeController} from "../../src/fee-controllers/RubiconFeeController.sol";
 import {ExclusiveDutchOrderReactor, ExclusiveDutchOrder, DutchInput, DutchOutput} from "../../src/reactors/ExclusiveDutchOrderReactor.sol";
+import {FixedPointMathLib} from "solmate/src/utils/FixedPointMathLib.sol";
 
 contract RubiconFeeControllerTest is Test {
     using OrderInfoBuilder for OrderInfo;
     using ResolvedOrderLib for OrderInfo;
-
+    using FixedPointMathLib for uint256;
+    
     event ProtocolFeeControllerSet(
         address oldFeeController,
         address newFeeController
@@ -165,6 +167,29 @@ contract RubiconFeeControllerTest is Test {
             (order.outputs[0].amount * feeController.baseFee()) / 100_000
         );
         assertEq(afterFees.outputs[1].recipient, RECIPIENT);
+    }
+
+    function testFuzz_MaxFee(uint256 outAmt) external {
+	uint256 maxFee = feeController.gladiusReactor().MAX_FEE();
+	
+	outAmt = bound(outAmt, 1, type(uint240).max);
+	// choose values with the remainder to test rounding.
+	vm.assume(outAmt * maxFee % 100_000 > 0);
+        ResolvedOrder memory order = createOrder(outAmt, false);
+	
+	// set 'baseFee' to be equal to 'MAX_FEE'
+        vm.prank(PROTOCOL_FEE_OWNER);
+        feeController.setBaseFee(maxFee);
+
+        ResolvedOrder memory afterFees = fees.takeFees(order);
+
+	uint256 feeOutAmt = afterFees.outputs[1].amount;
+	// check that even with the 'MAX_FEE' amounts will be the same.
+	// feeOutput.amount == tokenValue.mulDivUp(MAX_FEE, DENOM)
+	assertEq(feeOutAmt, outAmt.mulDivUp(maxFee, 100_000));
+
+	// also verify that with the old math values aren't equal.
+	assertTrue(feeOutAmt != outAmt.mulDivDown(maxFee, 100_000));
     }
 
     function testFuzz_PairBasedFee(uint256 feeBps) public {

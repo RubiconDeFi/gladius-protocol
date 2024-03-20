@@ -87,7 +87,7 @@ abstract contract ProtocolFees is DSAuth {
 
             if (tokenValue == 0) revert InvalidFeeToken(feeOutput.token);
 	    
-            if (feeOutput.amount > tokenValue.mulDivDown(MAX_FEE, DENOM)) {
+            if (feeOutput.amount > tokenValue.mulDivUp(MAX_FEE, DENOM)) {
                 revert FeeTooLarge(
                     feeOutput.token,
                     feeOutput.amount,
