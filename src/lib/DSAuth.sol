@@ -6,7 +6,7 @@ contract DSAuthEvents {
     event LogSetOwner(address indexed owner);
 }
 
-/// @notice DSAuth library for setting owner of the contract
+/// @notice DSAuth contract for setting owner of the contract
 /// @dev Provides the auth modifier for authenticated function calls
 contract DSAuth is DSAuthEvents {
     address public owner;

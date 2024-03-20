@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.19;
 
 import {ExclusiveDutchOrderReactor} from "../src/reactors/ExclusiveDutchOrderReactor.sol";
 import {IPermit2} from "permit2/src/interfaces/IPermit2.sol";
@@ -36,10 +36,8 @@ contract DeployExclusiveDutch is Script, DeployPermit2, DeployProxy {
 
         address payable proxy = deployProxy(address(reactor), "");
         console.log("Proxy for 'ExclusiveDutchOrderReactor':", proxy);
-        ExclusiveDutchOrderReactor(proxy).initialize(
-            PERMIT2,
-            RUBICON_ETH
-        );
+
+        ExclusiveDutchOrderReactor(proxy).initialize(address(PERMIT2), RUBICON_ETH);
         console.log("Proxy is initialized");
 
         OrderQuoter quoter = new OrderQuoter();

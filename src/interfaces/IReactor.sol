@@ -12,7 +12,11 @@ interface IReactor {
 
     /// @notice Execute a single order using the given callback data
     /// @param order The order definition and valid signature to execute
-    function executeWithCallback(SignedOrder calldata order, bytes calldata callbackData) external payable;
+    /// @param callbackData The callbackData to pass to the callback
+    function executeWithCallback(
+        SignedOrder calldata order,
+        bytes calldata callbackData
+    ) external payable;
 
     /// @notice Execute the given orders at once
     /// @param orders The order definitions and valid signatures to execute
@@ -21,5 +25,8 @@ interface IReactor {
     /// @notice Execute the given orders at once using a callback with the given callback data
     /// @param orders The order definitions and valid signatures to execute
     /// @param callbackData The callbackData to pass to the callback
-    function executeBatchWithCallback(SignedOrder[] calldata orders, bytes calldata callbackData) external payable;
+    function executeBatchWithCallback(
+        SignedOrder[] calldata orders,
+        bytes calldata callbackData
+    ) external payable;
 }

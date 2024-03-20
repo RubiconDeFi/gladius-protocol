@@ -12,16 +12,17 @@ library OrderInfoLib {
     /// @notice hash an OrderInfo object
     /// @param info The OrderInfo object to hash
     function hash(OrderInfo memory info) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                ORDER_INFO_TYPE_HASH,
-                info.reactor,
-                info.swapper,
-                info.nonce,
-                info.deadline,
-                info.additionalValidationContract,
-                keccak256(info.additionalValidationData)
-            )
-        );
+        return
+            keccak256(
+                abi.encode(
+                    ORDER_INFO_TYPE_HASH,
+                    info.reactor,
+                    info.swapper,
+                    info.nonce,
+                    info.deadline,
+                    info.additionalValidationContract,
+                    keccak256(info.additionalValidationData)
+                )
+            );
     }
 }
